@@ -336,3 +336,20 @@ class TestStaticFiles:
     async def test_spa_contains_digimon_content(self, client):
         r = await client.get("/")
         assert "DigiMon" in r.text
+
+
+class TestReviveRoute:
+    async def test_revive_alive_pet_is_noop(self, client):
+        """Reviving an alive pet returns 200 and pet stays alive."""
+        r = await client.post("/api/pet/revive")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["is_dead"] is False
+
+    async def test_revive_response_has_is_dead_field(self, client):
+        data = (await client.get("/api/pet")).json()
+        assert "is_dead" in data
+
+    async def test_get_pet_returns_last_interaction_date(self, client):
+        data = (await client.get("/api/pet")).json()
+        assert "last_interaction_date" in data

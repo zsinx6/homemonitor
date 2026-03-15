@@ -22,6 +22,7 @@ def _row_to_pet(row: aiosqlite.Row) -> Pet:
         exp=row["exp"],
         max_exp=row["max_exp"],
         hp=row["hp"],
+        is_dead=bool(row["is_dead"]),
         last_backup_date=_parse_dt(row["last_backup_date"]),
         last_interaction_date=_parse_dt(row["last_interaction_date"]),
         last_event=row["last_event"],
@@ -47,12 +48,12 @@ async def get_pet(db: aiosqlite.Connection) -> Pet:
 async def save_pet(db: aiosqlite.Connection, pet: Pet) -> None:
     await db.execute(
         """UPDATE pet_state SET
-            name = ?, level = ?, exp = ?, max_exp = ?, hp = ?,
+            name = ?, level = ?, exp = ?, max_exp = ?, hp = ?, is_dead = ?,
             last_backup_date = ?, last_interaction_date = ?,
             last_event = ?, last_updated = ?
            WHERE id = 1""",
         (
-            pet.name, pet.level, pet.exp, pet.max_exp, pet.hp,
+            pet.name, pet.level, pet.exp, pet.max_exp, pet.hp, int(pet.is_dead),
             _fmt(pet.last_backup_date), _fmt(pet.last_interaction_date),
             pet.last_event, _fmt(pet.last_updated),
         ),

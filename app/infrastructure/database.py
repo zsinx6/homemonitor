@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS pet_state (
     exp                   INTEGER NOT NULL DEFAULT 0,
     max_exp               INTEGER NOT NULL DEFAULT 100,
     hp                    INTEGER NOT NULL DEFAULT 10,
+    is_dead               INTEGER NOT NULL DEFAULT 0,
     last_backup_date      TEXT,
     last_interaction_date TEXT,
     last_event            TEXT,
@@ -65,5 +66,13 @@ VALUES (1, 'Bitmon', 1, 0, 100, 10, datetime('now', '-1 hour'), datetime('now'))
 async def init_db(db: aiosqlite.Connection) -> None:
     """Create schema and seed the default pet row (idempotent)."""
     await db.executescript(_SCHEMA_SQL)
+    # Migration: add is_dead column to existing databases that pre-date it
+    try:
+        await db.execute(
+            "ALTER TABLE pet_state ADD COLUMN is_dead INTEGER NOT NULL DEFAULT 0"
+        )
+        await db.commit()
+    except aiosqlite.OperationalError:
+        pass  # column already exists
     await db.execute(_SEED_PET_SQL)
     await db.commit()

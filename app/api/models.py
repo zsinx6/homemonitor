@@ -19,6 +19,7 @@ class PetResponse(BaseModel):
     max_exp: int
     hp: int
     hp_max: int
+    is_dead: bool
     status: str
     phrase: str
     evolution: str
@@ -26,6 +27,7 @@ class PetResponse(BaseModel):
     evolution_next_level: Optional[int]
     last_event: Optional[str]
     last_backup_date: Optional[datetime]
+    last_interaction_date: Optional[datetime]
     last_updated: datetime
 
 

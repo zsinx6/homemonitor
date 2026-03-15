@@ -5,10 +5,10 @@
 EXP_PER_HEALTHY_CYCLE = 1       # all servers UP
 EXP_INTERACT = 2                # petting the Digimon
 EXP_COMPLETE_TASK = 20          # marking a task done
-EXP_BACKUP = 50                 # running a backup
+EXP_BACKUP = 30                 # running a backup
 
 # HP changes
-HP_LOSS_PER_DOWN_CYCLE = 1      # any server DOWN each cycle
+HP_LOSS_PER_DOWN_CYCLE = 1      # HP lost *per downed server* each cycle (scales with count)
 HP_GAIN_ON_RECOVERY = 1         # a single server returns UP (per recovered server)
 HP_GAIN_INTERACT = 1            # petting the Digimon
 HP_GAIN_COMPLETE_TASK = 1       # completing a task
@@ -18,6 +18,7 @@ HP_DRAIN_BACKUP_OVERDUE = 1     # per cycle when backup is >30 days overdue
 # HP bounds
 HP_MAX = 10
 HP_MIN = 0
+HP_REVIVE = 5                   # HP restored on revival from death
 
 # EXP bounds
 EXP_MIN = 0

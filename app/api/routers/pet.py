@@ -67,6 +67,10 @@ async def _build_pet_response(db, phrase_selector) -> PetResponse:
         phrase = await phrase_selector.select(PhraseContext.BACKUP, {})
     elif event_type == "task_done":
         phrase = await phrase_selector.select(PhraseContext.TASK_DONE, {})
+    elif event_type == "death":
+        phrase = await phrase_selector.select(PhraseContext.DEATH, {})
+    elif event_type == "revival":
+        phrase = await phrase_selector.select(PhraseContext.REVIVAL, {})
     else:
         phrase = await phrase_selector.select(ctx_map.get(status, PhraseContext.HAPPY), {})
 
@@ -83,6 +87,7 @@ async def _build_pet_response(db, phrase_selector) -> PetResponse:
         max_exp=pet.max_exp,
         hp=pet.hp,
         hp_max=C.HP_MAX,
+        is_dead=pet.is_dead,
         status=status,
         phrase=phrase,
         evolution=species,
@@ -90,6 +95,7 @@ async def _build_pet_response(db, phrase_selector) -> PetResponse:
         evolution_next_level=next_evo_level,
         last_event=clean_event,
         last_backup_date=pet.last_backup_date,
+        last_interaction_date=pet.last_interaction_date,
         last_updated=pet.last_updated,
     )
 
@@ -109,8 +115,12 @@ async def interact(
     phrase_selector=Depends(get_phrase_selector),
 ):
     pet, on_cooldown = await pet_service.interact(db)
-    ctx = PhraseContext.INTERACT_COOLDOWN if on_cooldown else PhraseContext.INTERACT
-    phrase = await phrase_selector.select(ctx, {})
+    if pet.is_dead:
+        phrase = await phrase_selector.select(PhraseContext.DEATH, {})
+    elif on_cooldown:
+        phrase = await phrase_selector.select(PhraseContext.INTERACT_COOLDOWN, {})
+    else:
+        phrase = await phrase_selector.select(PhraseContext.INTERACT, {})
     return PetInteractResponse(exp=pet.exp, phrase=phrase, on_cooldown=on_cooldown)
 
 
@@ -121,8 +131,12 @@ async def backup(
     phrase_selector=Depends(get_phrase_selector),
 ):
     pet, on_cooldown = await pet_service.backup(db)
-    ctx = PhraseContext.BACKUP_COOLDOWN if on_cooldown else PhraseContext.BACKUP
-    phrase = await phrase_selector.select(ctx, {})
+    if pet.is_dead:
+        phrase = await phrase_selector.select(PhraseContext.DEATH, {})
+    elif on_cooldown:
+        phrase = await phrase_selector.select(PhraseContext.BACKUP_COOLDOWN, {})
+    else:
+        phrase = await phrase_selector.select(PhraseContext.BACKUP, {})
     return PetBackupResponse(
         exp=pet.exp,
         hp=pet.hp,
@@ -130,3 +144,14 @@ async def backup(
         on_cooldown=on_cooldown,
         last_backup_date=pet.last_backup_date,
     )
+
+
+@router.post("/pet/revive", response_model=PetResponse)
+async def revive(
+    db: aiosqlite.Connection = Depends(get_db),
+    pet_service=Depends(get_pet_service),
+    phrase_selector=Depends(get_phrase_selector),
+):
+    """Revive the dead pet. Resets HP to HP_REVIVE and clears EXP. No-op if alive."""
+    await pet_service.revive(db)
+    return await _build_pet_response(db, phrase_selector)

@@ -24,6 +24,7 @@ class Pet:
     last_interaction_date: Optional[datetime]
     last_event: Optional[str]
     last_updated: datetime
+    is_dead: bool = False
 
 
 def _now() -> datetime:
@@ -83,9 +84,11 @@ def _has_interacted_recently(pet: Pet) -> bool:
 def derive_status(pet: Pet, any_server_down: bool) -> str:
     """Derive the pet's display status from current state.
 
-    Priority order: critical > injured > sad > lonely > happy.
+    Priority order: dead > critical > injured > sad > lonely > happy.
     Status is never stored — always computed at read time.
     """
+    if pet.is_dead:
+        return "dead"
     if pet.hp == 0:
         return "critical"
     if pet.hp <= 3:
@@ -105,22 +108,26 @@ def apply_monitor_cycle(
     """Apply one monitoring cycle's worth of EXP/HP changes.
 
     Called after every 60-second check cycle.
+    Dead pets do not accumulate EXP or HP changes — they wait for revival.
     """
     updated = replace(pet, last_updated=_now(), last_event=None)
 
+    # Dead pets are frozen — no changes until revived
+    if pet.is_dead:
+        return updated
+
     any_down = len(down_server_names) > 0
 
-    # HP changes from downed servers
+    # HP loss scales with the number of downed servers
     if any_down:
-        new_hp = _clamp(updated.hp - C.HP_LOSS_PER_DOWN_CYCLE, C.HP_MIN, C.HP_MAX)
-        # Encode first downed server name so the router can use it for phrases
+        total_loss = len(down_server_names) * C.HP_LOSS_PER_DOWN_CYCLE
+        new_hp = _clamp(updated.hp - total_loss, C.HP_MIN, C.HP_MAX)
         updated = replace(updated, hp=new_hp, last_event=f"server_down:{down_server_names[0]}")
 
     # HP recovery from servers that came back up
     if recovered_server_names:
         recovery_hp = len(recovered_server_names) * C.HP_GAIN_ON_RECOVERY
         new_hp = _clamp(updated.hp + recovery_hp, C.HP_MIN, C.HP_MAX)
-        # Encode first recovered server name so the router can use it for phrases
         updated = replace(updated, hp=new_hp, last_event=f"recovery:{recovered_server_names[0]}")
 
     # Passive HP drain when pet has not been interacted with recently
@@ -132,6 +139,10 @@ def apply_monitor_cycle(
     if _is_backup_overdue(updated):
         new_hp = _clamp(updated.hp - C.HP_DRAIN_BACKUP_OVERDUE, C.HP_MIN, C.HP_MAX)
         updated = replace(updated, hp=new_hp)
+
+    # Death: HP just hit 0 this cycle
+    if updated.hp == 0 and not pet.is_dead:
+        return replace(updated, is_dead=True, last_event="death")
 
     # EXP gain only when all servers are up
     if not any_down:
@@ -160,6 +171,23 @@ def apply_backup(pet: Pet) -> Pet:
     new_hp = _clamp(pet.hp + C.HP_GAIN_BACKUP, C.HP_MIN, C.HP_MAX)
     updated = replace(pet, hp=new_hp, last_backup_date=_now(), last_event="backup")
     return _apply_exp_gain(updated, C.EXP_BACKUP)
+
+
+def apply_revive(pet: Pet) -> Pet:
+    """Revive a dead pet: restore HP, reset EXP, clear death flag.
+
+    Keeps level as-is so progression isn't fully wiped, but EXP resets to 0
+    as a meaningful penalty. HP is restored to HP_REVIVE (not full) so the
+    player still needs to care for the pet after revival.
+    """
+    return replace(
+        pet,
+        hp=C.HP_REVIVE,
+        exp=0,
+        is_dead=False,
+        last_event="revival",
+        last_updated=_now(),
+    )
 
 
 def get_evolution(level: int) -> tuple[str, str]:

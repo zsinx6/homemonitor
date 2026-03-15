@@ -132,11 +132,34 @@
       75%  { transform: scale(1.1) rotate(-3deg); }
       100% { transform: scale(1) rotate(0deg); filter: none; }
     }
+    @keyframes digivolution {
+      0%   { transform: scale(1) rotate(0deg); filter: brightness(1); }
+      15%  { transform: scale(0.8) rotate(-10deg); filter: brightness(3) drop-shadow(0 0 20px var(--blue)); color: var(--blue); }
+      40%  { transform: scale(1.4) rotate(10deg); filter: brightness(2) drop-shadow(0 0 24px var(--gold)); color: var(--gold); }
+      70%  { transform: scale(1.2) rotate(-5deg); filter: drop-shadow(0 0 12px var(--gold)); }
+      100% { transform: scale(1) rotate(0deg); filter: none; }
+    }
+    @keyframes death-flash {
+      0%   { filter: brightness(1); color: inherit; }
+      25%  { filter: brightness(3) drop-shadow(0 0 12px var(--red)); color: var(--red); }
+      60%  { filter: brightness(0.3); opacity: 0.5; }
+      100% { filter: brightness(0.5); opacity: 0.7; }
+    }
+    @keyframes revival-flash {
+      0%   { filter: brightness(0.3); opacity: 0.5; color: var(--grey); }
+      40%  { filter: brightness(3) drop-shadow(0 0 20px var(--green)); color: var(--green); }
+      70%  { filter: brightness(1.5) drop-shadow(0 0 8px var(--green)); }
+      100% { filter: brightness(1); opacity: 1; color: inherit; }
+    }
 
-    #digimon-face.anim-hit       { animation: hit 0.5s ease forwards; }
-    #digimon-face.anim-levelup   { animation: levelup 1s ease forwards; }
-    #digimon-face.anim-recovery  { animation: recovery 0.8s ease forwards; }
-    #digimon-face.anim-backup    { animation: backup-celebrate 1.2s ease forwards; }
+    #digimon-face.anim-hit        { animation: hit 0.5s ease forwards; }
+    #digimon-face.anim-levelup    { animation: levelup 1s ease forwards; }
+    #digimon-face.anim-recovery   { animation: recovery 0.8s ease forwards; }
+    #digimon-face.anim-backup     { animation: backup-celebrate 1.2s ease forwards; }
+    #digimon-face.anim-digivol    { animation: digivolution 1.5s ease forwards; }
+    #digimon-face.anim-death      { animation: death-flash 1s ease forwards; }
+    #digimon-face.anim-revival    { animation: revival-flash 1.2s ease forwards; }
+    #digimon-face.status-dead     { opacity: 0.6; animation: none; }
 
     /* --- Stats panel --- */
     #stats-panel {
@@ -573,13 +596,23 @@
 
   <div style="font-size:8px;color:var(--grey);text-align:center;padding:0 0 16px">
     Running a backup grants the Digimon<br>
-    <span style="color:var(--gold)">+50 EXP</span> &amp;
+    <span style="color:var(--gold)">+30 EXP</span> &amp;
     <span style="color:var(--green)">+5 HP</span>
   </div>
 
   <button id="backup-btn" class="nes-btn is-success" onclick="runBackup()">
     💾 FEED BACKUP
   </button>
+  <div id="backup-cooldown-timer" style="font-size:7px;color:var(--grey);text-align:center;margin-top:6px;display:none"></div>
+
+  <div style="margin-top:24px;border-top:1px solid var(--grey);padding-top:16px;display:none" id="revive-section">
+    <button id="revive-btn" class="nes-btn is-error" onclick="doRevive()" style="display:none;width:100%">
+      💀 REVIVE PET
+    </button>
+    <div style="font-size:7px;color:var(--grey);text-align:center;margin-top:6px">
+      Reviving resets EXP to 0 and restores 5 HP.
+    </div>
+  </div>
 </div>
 
 <!-- =====================================================================
@@ -594,21 +627,23 @@
 //   2. Add a matching key here with happy/lonely/sad/injured/critical variants
 // ---------------------------------------------------------------------------
 const STAGE_FACES = {
-  // Pixit — Fresh (level 1): a tiny data spark
+  // Bitmon — Fresh (level 1): a tiny data spark
   "fresh": {
     happy:    "  *\n(ᴗ)\n ‾",
     lonely:   "  *\n(-)\n ‾",
     sad:      "  *\n(╥)\n ‾",
     injured:  "  *\n(×)\n ‾",
     critical: "  ✕\n(✕)\n !!",
+    dead:     "  ×\n(×)\n ...",
   },
-  // Nybbit — In-Training (levels 2-4): a nibble-sized sprite
+  // Nibblemon — In-Training (levels 2-4): a nibble-sized sprite
   "in-training": {
     happy:    "  ○\n╔═══╗\n║ ᴗ ║\n╚═══╝",
     lonely:   "  ○\n╔═══╗\n║ - ║\n╚═══╝",
     sad:      "  ○\n╔═══╗\n║ ╥ ║\n╚═══╝",
     injured:  "  ✕\n╔═══╗\n║ × ║\n╚═══╝",
     critical: "  ✕\n╔═══╗\n║ ✕ ║\n╚═══╝",
+    dead:     "  ×\n╔═══╗\n║ × ║\n╚═══╝",
   },
   // Packamon — Rookie (levels 5-14): a compact packet carrier
   "rookie": {
@@ -617,6 +652,7 @@ const STAGE_FACES = {
     sad:      "  ▾\n╔═════╗\n║ ╥ ╥ ║\n║  ≈  ║\n║  ︵ ║\n╚═════╝",
     injured:  "  ▾\n╔═════╗\n║ × × ║\n║  ⚡ ║\n║ _/‾ ║\n╚═════╝",
     critical: "  ✕\n╔═════╗\n║ ✕ ✕ ║\n║  !!!║\n║  _  ║\n╚═════╝",
+    dead:     "  ×\n╔═════╗\n║ × × ║\n║  —  ║\n║  _  ║\n╚═════╝",
   },
   // Hostimon — Champion (levels 15-29): a formidable network guardian
   "champion": {
@@ -625,6 +661,7 @@ const STAGE_FACES = {
     sad:      "  ▽\n╠══════╣\n║ ╥  ╥ ║\n║   ≈  ║\n║  ︵  ║\n╚══════╝",
     injured:  "  ▽\n╠══════╣\n║ ×  × ║\n║  ⚡  ║\n║  _/‾ ║\n╚══════╝",
     critical: "  ✕\n╠══════╣\n║ ✕  ✕ ║\n║  !!! ║\n║  ___ ║\n╚══════╝",
+    dead:     "  ×\n╠══════╣\n║ ×  × ║\n║  —   ║\n║  ___ ║\n╚══════╝",
   },
   // Kernelmon — Perfect (level 30+): the ultimate system daemon
   "perfect": {
@@ -633,6 +670,7 @@ const STAGE_FACES = {
     sad:      " ╥▽\n╠══════╣\n║⊛    ⊛║\n║   ≈  ║\n║  ︵  ║\n╚══════╝",
     injured:  " ╥▽\n╠══════╣\n║×    ×║\n║  ⚡  ║\n║  _/‾ ║\n╚══════╝",
     critical: " ✕✕\n╠══════╣\n║✕    ✕║\n║  !!!  ║\n║  ___  ║\n╚══════╝",
+    dead:     " ××\n╠══════╣\n║×    ×║\n║  —   ║\n║  ___  ║\n╚══════╝",
   },
 };
 
@@ -686,7 +724,7 @@ function spawnFloat(x, y, text, cls) {
 }
 
 function triggerAnim(el, cls) {
-  el.classList.remove("anim-hit","anim-levelup","anim-recovery","anim-backup");
+  el.classList.remove("anim-hit","anim-levelup","anim-recovery","anim-backup","anim-digivol","anim-death","anim-revival");
   // Force reflow
   void el.offsetWidth;
   el.classList.add(cls);
@@ -771,12 +809,20 @@ function renderPet(pet, lastEvent) {
   if (lastEvent === "server_down") triggerAnim(face, "anim-hit");
   else if (lastEvent === "level_up") triggerAnim(face, "anim-levelup");
   else if (lastEvent === "digivolution") {
-    triggerAnim(face, "anim-levelup");
+    triggerAnim(face, "anim-digivol");
     spawnFloat(face.getBoundingClientRect().left + 20, face.getBoundingClientRect().top - 10,
                "✦ DIGIVOLUTION! ✦", "floating-exp");
   }
   else if (lastEvent === "recovery") triggerAnim(face, "anim-recovery");
   else if (lastEvent === "backup" || lastEvent === "task_done") triggerAnim(face, "anim-backup");
+  else if (lastEvent === "death") triggerAnim(face, "anim-death");
+  else if (lastEvent === "revival") triggerAnim(face, "anim-revival");
+
+  // Show/hide revive button and section
+  const reviveBtn = document.getElementById("revive-btn");
+  const reviveSection = document.getElementById("revive-section");
+  if (reviveBtn) reviveBtn.style.display = pet.is_dead ? "block" : "none";
+  if (reviveSection) reviveSection.style.display = pet.is_dead ? "block" : "none";
 
   // Backup counter in maintenance tab
   const days = pet.last_backup_date
@@ -799,6 +845,9 @@ function renderPet(pet, lastEvent) {
   state.prevHp     = pet.hp;
   state.prevExp    = pet.exp;
   state.prevLevel  = pet.level;
+
+  // Update backup countdown now that state.pet is current
+  updateBackupCountdown();
 }
 
 /* =====================================================================
@@ -1026,6 +1075,39 @@ async function runBackup() {
   btn.textContent = "💾 FEED BACKUP";
 }
 
+async function doRevive() {
+  const btn = document.getElementById("revive-btn");
+  btn.disabled = true;
+  btn.textContent = "REVIVING...";
+  try {
+    await api("POST", "/api/pet/revive");
+    triggerAnim(document.getElementById("digimon-face"), "anim-revival");
+    await poll();
+  } catch (_) {}
+  btn.disabled = false;
+  btn.textContent = "💀 REVIVE PET";
+}
+
+// Backup cooldown countdown — updates every second
+function updateBackupCountdown() {
+  if (!state.pet || !state.pet.last_backup_date) return;
+  const BACKUP_COOLDOWN_MS = 3600 * 1000; // 1 hour
+  const elapsed = Date.now() - new Date(state.pet.last_backup_date).getTime();
+  const remaining = Math.max(0, BACKUP_COOLDOWN_MS - elapsed);
+  const timerEl = document.getElementById("backup-cooldown-timer");
+  if (!timerEl) return;
+  if (remaining > 0) {
+    const m = Math.floor(remaining / 60000);
+    const s = Math.floor((remaining % 60000) / 1000);
+    timerEl.textContent = `Next backup in: ${m}m ${s.toString().padStart(2,"0")}s`;
+    timerEl.style.display = "block";
+    document.getElementById("backup-btn").disabled = true;
+  } else {
+    timerEl.style.display = "none";
+    document.getElementById("backup-btn").disabled = false;
+  }
+}
+
 /* =====================================================================
    ESCAPE UTILITY
 ===================================================================== */
@@ -1051,6 +1133,7 @@ updateTabNavTop();
 window.addEventListener("resize", updateTabNavTop);
 poll();
 setInterval(poll, 30000);
+setInterval(updateBackupCountdown, 1000);
 </script>
 </body>
 </html>

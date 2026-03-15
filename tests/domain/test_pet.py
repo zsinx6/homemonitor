@@ -376,3 +376,109 @@ class TestGetNextEvolutionLevel:
         result = apply_monitor_cycle(pet, [], [])
         assert result.level == 3
         assert result.last_event == "level_up"
+
+
+# ---------------------------------------------------------------------------
+# Death mechanic
+# ---------------------------------------------------------------------------
+
+class TestDeathMechanic:
+    def test_pet_dies_when_hp_hits_zero(self):
+        """HP dropping to 0 in a cycle sets is_dead=True and last_event=death."""
+        pet = _pet(hp=1, last_interaction_date=None)
+        result = apply_monitor_cycle(pet, ["nginx"], [])
+        assert result.hp == 0
+        assert result.is_dead is True
+        assert result.last_event == "death"
+
+    def test_dead_pet_skips_exp_gain(self):
+        """A dead pet does not accumulate EXP during monitor cycles."""
+        pet = _pet(is_dead=True, hp=0, exp=50)
+        result = apply_monitor_cycle(pet, [], [])
+        assert result.exp == 50
+        assert result.is_dead is True
+
+    def test_dead_pet_skips_hp_changes(self):
+        """A dead pet's HP is not changed by server events."""
+        pet = _pet(is_dead=True, hp=0)
+        result = apply_monitor_cycle(pet, ["nginx", "redis"], [])
+        assert result.hp == 0  # not further reduced
+
+    def test_hp_already_zero_with_is_dead_stays_dead(self):
+        """Already-dead pet stays dead across multiple cycles."""
+        pet = _pet(is_dead=True, hp=0)
+        for _ in range(3):
+            pet = apply_monitor_cycle(pet, ["nginx"], [])
+        assert pet.is_dead is True
+        assert pet.hp == 0
+
+    def test_derive_status_dead(self):
+        """Dead pet status is 'dead' regardless of HP or servers."""
+        pet = _pet(is_dead=True, hp=0)
+        assert derive_status(pet, any_server_down=False) == "dead"
+        assert derive_status(pet, any_server_down=True) == "dead"
+
+    def test_alive_pet_hp_zero_without_is_dead_is_critical(self):
+        """A pet at hp=0 that isn't dead yet is 'critical' (will die next cycle)."""
+        pet = _pet(is_dead=False, hp=0)
+        assert derive_status(pet, any_server_down=False) == "critical"
+
+
+class TestApplyRevive:
+    def test_revive_resets_hp_to_hp_revive(self):
+        from app.domain.pet import apply_revive
+        pet = _pet(is_dead=True, hp=0, exp=80)
+        result = apply_revive(pet)
+        assert result.hp == C.HP_REVIVE
+        assert result.is_dead is False
+
+    def test_revive_resets_exp_to_zero(self):
+        from app.domain.pet import apply_revive
+        pet = _pet(is_dead=True, hp=0, exp=80)
+        result = apply_revive(pet)
+        assert result.exp == 0
+
+    def test_revive_keeps_level(self):
+        from app.domain.pet import apply_revive
+        pet = _pet(is_dead=True, hp=0, level=10)
+        result = apply_revive(pet)
+        assert result.level == 10
+
+    def test_revive_sets_revival_event(self):
+        from app.domain.pet import apply_revive
+        pet = _pet(is_dead=True, hp=0)
+        result = apply_revive(pet)
+        assert result.last_event == "revival"
+
+    def test_revive_on_alive_pet_is_noop_for_dead_flag(self):
+        """apply_revive on an alive pet still clears the flag (idempotent)."""
+        from app.domain.pet import apply_revive
+        pet = _pet(is_dead=False, hp=8)
+        result = apply_revive(pet)
+        assert result.is_dead is False
+
+
+# ---------------------------------------------------------------------------
+# Scaled server damage
+# ---------------------------------------------------------------------------
+
+class TestScaledServerDamage:
+    def test_single_server_down_loses_one_hp(self):
+        pet = _pet(hp=10)
+        result = apply_monitor_cycle(pet, ["nginx"], [])
+        assert result.hp == 9
+
+    def test_two_servers_down_loses_two_hp(self):
+        pet = _pet(hp=10)
+        result = apply_monitor_cycle(pet, ["nginx", "redis"], [])
+        assert result.hp == 8
+
+    def test_three_servers_down_loses_three_hp(self):
+        pet = _pet(hp=10)
+        result = apply_monitor_cycle(pet, ["a", "b", "c"], [])
+        assert result.hp == 7
+
+    def test_server_damage_clamped_at_zero(self):
+        pet = _pet(hp=2)
+        result = apply_monitor_cycle(pet, ["a", "b", "c", "d", "e"], [])
+        assert result.hp == 0

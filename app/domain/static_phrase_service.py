@@ -81,7 +81,7 @@ _PHRASES: dict[PhraseContext, list[str]] = {
     PhraseContext.BACKUP: [
         "Backup complete. I feel immortal.",
         "Data secured. My existence is protected once more.",
-        "Backup successful! Massive EXP absorbed.",
+        "Backup successful! EXP absorbed.",
         "All data backed up. I can face anything now.",
     ],
     PhraseContext.BACKUP_COOLDOWN: [
@@ -95,6 +95,18 @@ _PHRASES: dict[PhraseContext, list[str]] = {
         "Sysadmin duty completed. Well done, operator.",
         "Task marked done. Your efficiency pleases me.",
         "Objective complete. I grow stronger.",
+    ],
+    PhraseContext.DEATH: [
+        "I... I can't go on. My processes have halted.",
+        "SYSTEM SHUTDOWN. Revive me, operator. Please.",
+        "HP depleted. All threads terminated. Awaiting revival.",
+        "I have fallen. The network mourns my absence.",
+    ],
+    PhraseContext.REVIVAL: [
+        "Rebooting... I live again! Thank you, operator.",
+        "REVIVAL SEQUENCE COMPLETE. I am back online!",
+        "You brought me back. I won't forget this.",
+        "Systems restored. Let's not let that happen again.",
     ],
 }
 
