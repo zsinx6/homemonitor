@@ -45,7 +45,7 @@ async def get_pet(db: aiosqlite.Connection) -> Pet:
     return _row_to_pet(row)
 
 
-async def save_pet(db: aiosqlite.Connection, pet: Pet) -> None:
+async def save_pet(db: aiosqlite.Connection, pet: Pet, *, commit: bool = True) -> None:
     await db.execute(
         """UPDATE pet_state SET
             name = ?, level = ?, exp = ?, max_exp = ?, hp = ?, is_dead = ?,
@@ -58,7 +58,8 @@ async def save_pet(db: aiosqlite.Connection, pet: Pet) -> None:
             pet.last_event, _fmt(pet.last_updated),
         ),
     )
-    await db.commit()
+    if commit:
+        await db.commit()
 
 
 async def clear_last_event(db: aiosqlite.Connection) -> None:

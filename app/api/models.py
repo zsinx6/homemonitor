@@ -29,6 +29,7 @@ class PetResponse(BaseModel):
     last_backup_date: Optional[datetime]
     last_interaction_date: Optional[datetime]
     last_updated: datetime
+    backup_cooldown_remaining_seconds: int = 0
 
 
 class PetInteractResponse(BaseModel):
@@ -69,6 +70,7 @@ class ServerOut(BaseModel):
     last_error: Optional[str]
     last_checked: Optional[datetime]
     daily_stats: list[DailyStatOut] = Field(default_factory=list)
+    maintenance_mode: bool = False
 
 
 class _ServerBase(BaseModel):
@@ -113,6 +115,11 @@ class TaskOut(BaseModel):
     is_completed: bool
     created_at: datetime
     completed_at: Optional[datetime]
+
+
+class TaskListResponse(BaseModel):
+    tasks: list[TaskOut]
+    total_completed: int
 
 
 class TaskCreate(BaseModel):

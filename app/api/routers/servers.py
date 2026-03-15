@@ -26,6 +26,7 @@ async def _server_with_stats(db, srv) -> ServerOut:
         successful_checks=srv.successful_checks,
         last_error=srv.last_error,
         last_checked=srv.last_checked,
+        maintenance_mode=srv.maintenance_mode,
         daily_stats=[
             DailyStatOut(
                 date=d.date,
@@ -73,3 +74,16 @@ async def delete_server(
     deleted = await server_repo.delete_server(db, server_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Server not found")
+
+
+@router.patch("/servers/{server_id}/maintenance", response_model=ServerOut)
+async def toggle_maintenance(
+    server_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Toggle maintenance mode for a server. Maintenance servers are monitored
+    but excluded from pet HP damage."""
+    srv = await server_repo.toggle_maintenance(db, server_id)
+    if srv is None:
+        raise HTTPException(status_code=404, detail="Server not found")
+    return await _server_with_stats(db, srv)

@@ -31,6 +31,7 @@ class MonitorService:
         # to avoid collisions from duplicate names and survive renames
         id_to_name = {s.id: s.name for s in servers}
         previous_statuses = {s.id: s.status for s in servers}
+        maintenance_ids = {s.id for s in servers if s.maintenance_mode}
 
         # Run all checks in parallel
         tasks = [
@@ -59,16 +60,18 @@ class MonitorService:
         )
 
         # Map IDs back to names for domain/phrase use
-        newly_down_names = [id_to_name[i] for i in newly_down_ids if i in id_to_name]
+        # Exclude maintenance servers — they don't damage the pet
+        newly_down_names = [
+            id_to_name[i] for i in newly_down_ids
+            if i in id_to_name and i not in maintenance_ids
+        ]
         newly_recovered_names = [id_to_name[i] for i in newly_recovered_ids if i in id_to_name]
 
-        # Always pass ALL currently-down servers so HP drains every cycle they
-        # remain down. Only fire the "server_down" event when a server NEWLY
-        # transitions to DOWN (not on every repeat cycle).
+        # Always pass ALL currently-down non-maintenance servers so HP drains every cycle
         all_currently_down_names = [
             id_to_name[sid]
             for sid, status in current_statuses.items()
-            if status == "DOWN" and sid in id_to_name
+            if status == "DOWN" and sid in id_to_name and sid not in maintenance_ids
         ]
 
         # Update pet state

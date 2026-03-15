@@ -1,6 +1,7 @@
 """Pet API routes."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 
 import aiosqlite
@@ -28,10 +29,17 @@ def _decode_event(last_event: str | None) -> tuple[str | None, str | None]:
 async def _build_pet_response(db, phrase_selector) -> PetResponse:
     pet = await pet_repo.get_pet(db)
     servers = await server_repo.list_servers(db)
-    any_down = any(s.status == "DOWN" for s in servers)
+    any_down = any(s.status == "DOWN" and not s.maintenance_mode for s in servers)
     status = derive_status(pet, any_server_down=any_down)
     species, stage = get_evolution(pet.level)
     next_evo_level = get_next_evolution_level(pet.level)
+
+    # Compute server-authoritative backup cooldown remaining
+    if pet.last_backup_date is not None:
+        elapsed_s = (datetime.now(timezone.utc) - pet.last_backup_date).total_seconds()
+        backup_remaining = max(0, int(C.BACKUP_COOLDOWN_HOURS * 3600 - elapsed_s))
+    else:
+        backup_remaining = 0
 
     # Decode last_event — may carry an encoded server name as detail
     event_type, event_detail = _decode_event(pet.last_event)
@@ -97,6 +105,7 @@ async def _build_pet_response(db, phrase_selector) -> PetResponse:
         last_backup_date=pet.last_backup_date,
         last_interaction_date=pet.last_interaction_date,
         last_updated=pet.last_updated,
+        backup_cooldown_remaining_seconds=backup_remaining,
     )
 
 

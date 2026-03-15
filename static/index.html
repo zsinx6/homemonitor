@@ -445,7 +445,8 @@
       padding: 20px 0 8px;
       color: var(--green);
     }
-    #backup-counter.overdue { color: var(--red); animation: tremor 1s ease-in-out infinite; }
+    #backup-counter.overdue  { color: var(--red); animation: tremor 1s ease-in-out infinite; }
+    #backup-counter.warning  { color: var(--yellow); }
     #backup-counter-label   { font-size: 8px; text-align: center; color: var(--grey); margin-bottom: 24px; }
 
     #backup-btn {
@@ -462,6 +463,13 @@
     .form-label { font-size: 7px; color: var(--grey); display: block; margin-bottom: 4px; }
     .nes-input, .nes-select select { font-size: 8px !important; width: 100%; }
     .nes-btn { font-size: 8px !important; }
+
+    .form-error {
+      font-size: 7px;
+      color: var(--red);
+      margin: 4px 0 8px;
+      min-height: 14px;
+    }
 
     /* =====================================================================
        LOADING / ERROR OVERLAY
@@ -562,6 +570,7 @@
         </select>
       </div>
     </div>
+    <div id="srv-error" class="form-error"></div>
     <button class="nes-btn is-primary" onclick="addServer()">ADD SERVER</button>
   </div>
 </div>
@@ -583,6 +592,7 @@
              placeholder="Fix nginx backup" maxlength="500"
              onkeydown="if(event.key==='Enter') addTask()">
     </div>
+    <div id="task-error" class="form-error"></div>
     <button class="nes-btn is-primary" onclick="addTask()">ADD TASK</button>
   </div>
 </div>
@@ -690,19 +700,28 @@ const state = {
    HELPERS
 ===================================================================== */
 async function api(method, path, body) {
-  try {
-    const res = await fetch(path, {
-      method,
-      headers: body ? { "Content-Type": "application/json" } : {},
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    if (res.status === 204) return {};
-    return res.json();
-  } catch (e) {
+  const res = await fetch(path, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 204) return {};
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    if (res.status === 422 && Array.isArray(data.detail)) {
+      const msgs = data.detail.map(e => {
+        const field = (e.loc || []).slice(1).join(".");
+        return field ? `${field}: ${e.msg}` : e.msg;
+      }).join(" | ");
+      const err = new Error(msgs);
+      err.isValidation = true;
+      throw err;
+    }
     showError(true);
-    throw e;
+    throw new Error(data.detail || `HTTP ${res.status}`);
   }
+  showError(false);
+  return data;
 }
 
 function showError(visible) {
@@ -836,7 +855,7 @@ function renderPet(pet, lastEvent) {
     lbl.textContent = "LAST BACKUP";
   } else {
     counter.textContent = days;
-    counter.className = days >= 30 ? "overdue" : "";
+    counter.className = days >= 30 ? "overdue" : (days >= 20 ? "warning" : "");
     lbl.textContent = "DAYS SINCE LAST BACKUP";
   }
 
@@ -878,6 +897,7 @@ function renderServers(servers) {
 
   list.innerHTML = servers.map(s => {
     const isDown    = s.status === "DOWN";
+    const isMaint   = s.maintenance_mode;
     const uptimePct = s.uptime_percent.toFixed(1);
     const barClass  = uptimeClass(s.uptime_percent);
 
@@ -889,15 +909,20 @@ function renderServers(servers) {
     ).join("");
 
     return `
-<div class="server-card ${isDown ? "down" : ""}" data-id="${s.id}">
+<div class="server-card ${isDown ? "down" : ""} ${isMaint ? "maintenance" : ""}" data-id="${s.id}">
   <div class="server-header">
     <div class="status-dot ${isDown ? "down" : "up"}"></div>
     <div class="server-name">${escHtml(s.name)}</div>
+    ${isMaint ? '<div style="font-size:6px;color:var(--yellow);margin-left:2px" title="Maintenance mode — damage paused">🔧</div>' : ""}
     <div style="font-size:7px;color:var(--grey)">${s.type.toUpperCase()}</div>
+    <button class="nes-btn ${isMaint ? "is-warning" : ""}" style="font-size:6px!important;padding:2px 6px;margin-left:4px"
+            title="${isMaint ? "Disable maintenance" : "Enable maintenance"}"
+            onclick="toggleMaintenance(${s.id})">🔧</button>
     <button class="nes-btn is-error" style="font-size:6px!important;padding:2px 6px;margin-left:4px"
             onclick="deleteServer(${s.id})">✕</button>
   </div>
   <div class="server-addr">${escHtml(s.address)}${s.port ? ":"+s.port : ""}</div>
+  ${isMaint ? '<div style="font-size:7px;color:var(--yellow);margin-bottom:4px">🔧 MAINTENANCE — damage paused</div>' : ""}
   ${isDown && s.last_error ? `<div style="font-size:7px;color:var(--red);margin-bottom:4px">⚠ ${escHtml(s.last_error)}</div>` : ""}
   <div class="uptime-label">UPTIME ${uptimePct}% &nbsp; (${s.total_checks} checks)</div>
   <div class="uptime-bar-track">
@@ -913,12 +938,15 @@ function renderServers(servers) {
 /* =====================================================================
    RENDER TASKS
 ===================================================================== */
-function renderTasks(tasks) {
-  const pending   = tasks.filter(t => !t.is_completed);
-  const completed = tasks.filter(t => t.is_completed);
-  const list      = document.getElementById("task-list");
+function renderTasks(data) {
+  const tasks      = data.tasks || [];
+  const totalDone  = data.total_completed || 0;
+  const cap        = 20; // matches COMPLETED_TASKS_DISPLAY_CAP
+  const pending    = tasks.filter(t => !t.is_completed);
+  const completed  = tasks.filter(t => t.is_completed);
+  const list       = document.getElementById("task-list");
 
-  if (!tasks.length) {
+  if (!tasks.length && totalDone === 0) {
     list.innerHTML = '<div style="font-size:8px;color:var(--grey);text-align:center;padding:20px 0">No tasks yet. Add your first sysadmin task below.</div>';
     return;
   }
@@ -930,15 +958,19 @@ function renderTasks(tasks) {
   <button class="task-delete-btn" onclick="deleteTask(${t.id})" title="Delete task">✕</button>
 </div>`).join("");
 
-  const completedHtml = completed.length ? `
-<div class="completed-divider">COMPLETED (${completed.length})</div>
+  let completedHtml = "";
+  if (completed.length) {
+    const extra = totalDone > cap ? `<div style="font-size:7px;color:var(--grey);padding:4px 0">… and ${totalDone - completed.length} more completed</div>` : "";
+    completedHtml = `
+<div class="completed-divider">COMPLETED (${totalDone})</div>
 ${completed.map(t => `
 <div class="task-item" id="task-${t.id}">
   <input type="checkbox" class="task-checkbox" checked disabled>
   <span class="task-text done">${escHtml(t.task)}</span>
-</div>`).join("")}` : "";
+</div>`).join("")}${extra}`;
+  }
 
-  list.innerHTML = pendingHtml + completedHtml;
+  list.innerHTML = (pendingHtml || (!completed.length ? '<div style="font-size:8px;color:var(--grey);text-align:center;padding:20px 0">No tasks yet. Add your first sysadmin task below.</div>' : "")) + completedHtml;
 }
 
 /* =====================================================================
@@ -996,14 +1028,18 @@ async function addServer() {
   const addr = document.getElementById("srv-addr").value.trim();
   const port = document.getElementById("srv-port").value;
   const type = document.getElementById("srv-type").value;
-  if (!name || !addr) return alert("Name and address are required.");
+  const errEl = document.getElementById("srv-error");
+  errEl.textContent = "";
+  if (!name || !addr) { errEl.textContent = "Name and address are required."; return; }
   try {
     await api("POST", "/api/servers", { name, address: addr, port: port ? +port : null, type });
     document.getElementById("srv-name").value = "";
     document.getElementById("srv-addr").value = "";
     document.getElementById("srv-port").value = "";
     await poll();
-  } catch (_) {}
+  } catch (e) {
+    if (e.isValidation) errEl.textContent = e.message;
+  }
 }
 
 async function deleteServer(id) {
@@ -1014,15 +1050,26 @@ async function deleteServer(id) {
   } catch (_) {}
 }
 
+async function toggleMaintenance(id) {
+  try {
+    await api("PATCH", `/api/servers/${id}/maintenance`);
+    await poll();
+  } catch (_) {}
+}
+
 async function addTask() {
   const input = document.getElementById("task-input");
   const text  = input.value.trim();
+  const errEl = document.getElementById("task-error");
+  errEl.textContent = "";
   if (!text) return;
   try {
     await api("POST", "/api/tasks", { task: text });
     input.value = "";
     await poll();
-  } catch (_) {}
+  } catch (e) {
+    if (e.isValidation) errEl.textContent = e.message;
+  }
 }
 
 async function completeTask(id, checkbox) {
@@ -1060,19 +1107,25 @@ async function runBackup() {
   const btn = document.getElementById("backup-btn");
   btn.disabled = true;
   btn.textContent = "RUNNING...";
+  let onCooldown = false;
   try {
     const res = await api("POST", "/api/pet/backup");
     setSpeech(res.phrase);
     if (res.on_cooldown) {
+      onCooldown = true;
       btn.textContent = "⏳ ON COOLDOWN";
       setTimeout(() => { btn.textContent = "💾 FEED BACKUP"; btn.disabled = false; }, 3000);
-      return;
+    } else {
+      triggerAnim(document.getElementById("digimon-face"), "anim-backup");
+      await poll();
     }
-    triggerAnim(document.getElementById("digimon-face"), "anim-backup");
-    await poll();
   } catch (_) {}
-  btn.disabled = false;
-  btn.textContent = "💾 FEED BACKUP";
+  finally {
+    if (!onCooldown) {
+      btn.disabled = false;
+      btn.textContent = "💾 FEED BACKUP";
+    }
+  }
 }
 
 async function doRevive() {
@@ -1088,23 +1141,36 @@ async function doRevive() {
   btn.textContent = "💀 REVIVE PET";
 }
 
-// Backup cooldown countdown — updates every second
+// Backup cooldown countdown — seeds from server-provided remaining seconds and counts down locally
+let _backupCooldownRemaining = 0;
+let _backupCooldownTick = null;
+
 function updateBackupCountdown() {
-  if (!state.pet || !state.pet.last_backup_date) return;
-  const BACKUP_COOLDOWN_MS = 3600 * 1000; // 1 hour
-  const elapsed = Date.now() - new Date(state.pet.last_backup_date).getTime();
-  const remaining = Math.max(0, BACKUP_COOLDOWN_MS - elapsed);
+  if (!state.pet) return;
+  // Sync from server-authoritative value on each poll
+  _backupCooldownRemaining = state.pet.backup_cooldown_remaining_seconds || 0;
+  _renderBackupCountdown();
+}
+
+function _renderBackupCountdown() {
   const timerEl = document.getElementById("backup-cooldown-timer");
-  if (!timerEl) return;
-  if (remaining > 0) {
-    const m = Math.floor(remaining / 60000);
-    const s = Math.floor((remaining % 60000) / 1000);
-    timerEl.textContent = `Next backup in: ${m}m ${s.toString().padStart(2,"0")}s`;
+  const btn     = document.getElementById("backup-btn");
+  if (!timerEl || !btn) return;
+  if (_backupCooldownRemaining > 0) {
+    const m = Math.floor(_backupCooldownRemaining / 60);
+    const s = _backupCooldownRemaining % 60;
+    timerEl.textContent = `Next backup in: ${m}m ${s.toString().padStart(2, "0")}s`;
     timerEl.style.display = "block";
-    document.getElementById("backup-btn").disabled = true;
+    btn.disabled = true;
+    // Count down every second
+    clearTimeout(_backupCooldownTick);
+    _backupCooldownTick = setTimeout(() => {
+      _backupCooldownRemaining = Math.max(0, _backupCooldownRemaining - 1);
+      _renderBackupCountdown();
+    }, 1000);
   } else {
     timerEl.style.display = "none";
-    document.getElementById("backup-btn").disabled = false;
+    btn.disabled = false;
   }
 }
 

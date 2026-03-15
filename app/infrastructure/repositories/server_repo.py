@@ -21,6 +21,7 @@ class ServerRow:
     successful_checks: int
     last_error: Optional[str]
     last_checked: Optional[datetime]
+    maintenance_mode: bool = False
 
 
 @dataclass
@@ -49,6 +50,7 @@ def _row_to_server(row: aiosqlite.Row) -> ServerRow:
         successful_checks=row["successful_checks"],
         last_error=row["last_error"],
         last_checked=_parse_dt(row["last_checked"]),
+        maintenance_mode=bool(row["maintenance_mode"]),
     )
 
 
@@ -105,6 +107,20 @@ async def delete_server(db: aiosqlite.Connection, server_id: int) -> bool:
     return deleted
 
 
+async def toggle_maintenance(db: aiosqlite.Connection, server_id: int) -> Optional[ServerRow]:
+    """Toggle maintenance_mode for a server. Returns updated row or None if not found."""
+    server = await get_server(db, server_id)
+    if server is None:
+        return None
+    new_mode = 0 if server.maintenance_mode else 1
+    await db.execute(
+        "UPDATE servers SET maintenance_mode = ? WHERE id = ?",
+        (new_mode, server_id),
+    )
+    await db.commit()
+    return await get_server(db, server_id)
+
+
 async def update_server_check_result(
     db: aiosqlite.Connection,
     server_id: int,
@@ -138,13 +154,13 @@ async def upsert_daily_stat(
     """Upsert today's daily stats row for the given server."""
     await db.execute(
         """INSERT INTO server_daily_stats (server_id, date, total_checks, successful_checks, uptime_percent)
-           VALUES (?, ?, 1, ?, ?)
+           VALUES (?, ?, 1, ?, ROUND(CAST(? AS REAL) * 100, 2))
            ON CONFLICT(server_id, date) DO UPDATE SET
                total_checks = total_checks + 1,
                successful_checks = successful_checks + excluded.successful_checks,
                uptime_percent = ROUND((CAST(successful_checks + excluded.successful_checks AS REAL) /
                                 (total_checks + 1)) * 100, 2)""",
-        (server_id, date_str, int(is_up), 100.0 if is_up else 0.0),
+        (server_id, date_str, int(is_up), int(is_up)),
     )
     await db.commit()
 

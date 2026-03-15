@@ -12,11 +12,14 @@ class TaskService:
         self._task_repo = task_repo
 
     async def complete_task(self, db, task_id: int) -> Optional[object]:
-        """Mark a task done, grant pet EXP+HP. Returns completed task or None."""
-        task = await self._task_repo.complete_task(db, task_id)
+        """Mark a task done and grant pet EXP+HP in a single transaction."""
+        # Mark task complete without committing yet
+        task = await self._task_repo.complete_task(db, task_id, commit=False)
         if task is None:
             return None
         pet = await self._pet_repo.get_pet(db)
         updated_pet = apply_complete_task(pet)
-        await self._pet_repo.save_pet(db, updated_pet)
+        # Save pet without committing — single atomic commit below
+        await self._pet_repo.save_pet(db, updated_pet, commit=False)
+        await db.commit()
         return task

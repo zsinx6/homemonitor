@@ -71,7 +71,7 @@ async def create_task(db: aiosqlite.Connection, task_text: str) -> TaskRow:
 
 
 async def complete_task(
-    db: aiosqlite.Connection, task_id: int
+    db: aiosqlite.Connection, task_id: int, *, commit: bool = True
 ) -> Optional[TaskRow]:
     """Mark a task complete. Returns None if task not found or already complete."""
     task = await get_task(db, task_id)
@@ -82,8 +82,18 @@ async def complete_task(
         "UPDATE tasks SET is_completed = 1, completed_at = ? WHERE id = ?",
         (now, task_id),
     )
-    await db.commit()
+    if commit:
+        await db.commit()
     return await get_task(db, task_id)
+
+
+async def count_completed(db: aiosqlite.Connection) -> int:
+    """Return the total number of completed tasks."""
+    async with db.execute(
+        "SELECT COUNT(*) FROM tasks WHERE is_completed = 1"
+    ) as cur:
+        row = await cur.fetchone()
+    return row[0] if row else 0
 
 
 async def delete_task(db: aiosqlite.Connection, task_id: int) -> bool:

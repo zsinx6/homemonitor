@@ -46,7 +46,7 @@ class MockPetRepo:
     async def get_pet(self, db):
         return self.pet
 
-    async def save_pet(self, db, pet: Pet):
+    async def save_pet(self, db, pet: Pet, *, commit: bool = True):
         self.pet = pet
         self.saved.append(pet)
 
@@ -77,7 +77,7 @@ class MockTaskRepo:
     async def get_task(self, db, task_id: int):
         return next((t for t in self.tasks if t.id == task_id), None)
 
-    async def complete_task(self, db, task_id: int):
+    async def complete_task(self, db, task_id: int, *, commit: bool = True):
         task = next((t for t in self.tasks if t.id == task_id), None)
         if task:
             self.completed.append(task_id)
@@ -92,6 +92,7 @@ class FakeServer:
     port: Optional[int]
     type: str
     status: str = "UP"
+    maintenance_mode: bool = False
 
 
 @dataclass
@@ -309,26 +310,30 @@ class TestTaskService:
         service = TaskService(pet_repo=pet_repo, task_repo=task_repo)
         return service, pet_repo, task_repo
 
+    def _mock_db(self):
+        db = AsyncMock()
+        return db
+
     async def test_complete_task_grants_exp(self):
         task = FakeTask(id=1, task="Fix nginx")
         service, pet_repo, _ = self._make_service(tasks=[task])
-        await service.complete_task(db=None, task_id=1)
+        await service.complete_task(db=self._mock_db(), task_id=1)
         assert pet_repo.pet.exp == C.EXP_COMPLETE_TASK
 
     async def test_complete_task_grants_hp(self):
         task = FakeTask(id=1, task="Fix nginx")
         service, pet_repo, _ = self._make_service(tasks=[task], initial_pet=_default_pet(hp=5))
-        await service.complete_task(db=None, task_id=1)
+        await service.complete_task(db=self._mock_db(), task_id=1)
         assert pet_repo.pet.hp == min(5 + C.HP_GAIN_COMPLETE_TASK, C.HP_MAX)
 
     async def test_complete_nonexistent_task_returns_none(self):
         service, pet_repo, _ = self._make_service(tasks=[])
-        result = await service.complete_task(db=None, task_id=999)
+        result = await service.complete_task(db=self._mock_db(), task_id=999)
         assert result is None
         assert pet_repo.pet.exp == 0  # no change
 
     async def test_complete_task_sets_task_done_event(self):
         task = FakeTask(id=1, task="Fix nginx")
         service, pet_repo, _ = self._make_service(tasks=[task])
-        await service.complete_task(db=None, task_id=1)
+        await service.complete_task(db=self._mock_db(), task_id=1)
         assert pet_repo.pet.last_event == "task_done"

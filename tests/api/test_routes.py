@@ -240,7 +240,9 @@ class TestTaskRoutes:
     async def test_list_tasks_empty(self, client):
         r = await client.get("/api/tasks")
         assert r.status_code == 200
-        assert r.json() == []
+        data = r.json()
+        assert data["tasks"] == []
+        assert data["total_completed"] == 0
 
     async def test_create_task(self, client):
         r = await client.post("/api/tasks", json={"task": "Fix nginx backup"})
@@ -251,7 +253,7 @@ class TestTaskRoutes:
 
     async def test_create_task_appears_in_list(self, client):
         await client.post("/api/tasks", json={"task": "New task"})
-        tasks = (await client.get("/api/tasks")).json()
+        tasks = (await client.get("/api/tasks")).json()["tasks"]
         assert any(t["task"] == "New task" for t in tasks)
 
     async def test_complete_task_grants_exp(self, client):
@@ -280,7 +282,7 @@ class TestTaskRoutes:
     async def test_complete_task_appears_in_list_as_done(self, client):
         task = (await client.post("/api/tasks", json={"task": "Archive logs"})).json()
         await client.put(f"/api/tasks/{task['id']}/complete")
-        tasks = (await client.get("/api/tasks")).json()
+        tasks = (await client.get("/api/tasks")).json()["tasks"]
         match = next(t for t in tasks if t["id"] == task["id"])
         assert match["is_completed"] is True
 
@@ -300,7 +302,7 @@ class TestTaskRoutes:
         t1 = (await client.post("/api/tasks", json={"task": "Pending task"})).json()
         t2 = (await client.post("/api/tasks", json={"task": "Done task"})).json()
         await client.put(f"/api/tasks/{t2['id']}/complete")
-        tasks = (await client.get("/api/tasks")).json()
+        tasks = (await client.get("/api/tasks")).json()["tasks"]
         ids = [t["id"] for t in tasks]
         assert t1["id"] in ids
         assert t2["id"] in ids
@@ -313,7 +315,7 @@ class TestTaskRoutes:
     async def test_delete_task_removes_from_list(self, client):
         task = (await client.post("/api/tasks", json={"task": "Deletable task"})).json()
         await client.delete(f"/api/tasks/{task['id']}")
-        tasks = (await client.get("/api/tasks")).json()
+        tasks = (await client.get("/api/tasks")).json()["tasks"]
         assert all(t["id"] != task["id"] for t in tasks)
 
     async def test_delete_nonexistent_task_returns_404(self, client):
@@ -353,3 +355,54 @@ class TestReviveRoute:
     async def test_get_pet_returns_last_interaction_date(self, client):
         data = (await client.get("/api/pet")).json()
         assert "last_interaction_date" in data
+
+    async def test_get_pet_returns_backup_cooldown_remaining_seconds(self, client):
+        data = (await client.get("/api/pet")).json()
+        assert "backup_cooldown_remaining_seconds" in data
+        assert isinstance(data["backup_cooldown_remaining_seconds"], int)
+
+
+class TestMaintenanceMode:
+    async def test_toggle_maintenance_on(self, client):
+        srv = (await client.post("/api/servers", json={
+            "name": "web", "address": "http://localhost", "type": "http"
+        })).json()
+        assert srv["maintenance_mode"] is False
+        r = await client.patch(f"/api/servers/{srv['id']}/maintenance")
+        assert r.status_code == 200
+        assert r.json()["maintenance_mode"] is True
+
+    async def test_toggle_maintenance_off(self, client):
+        srv = (await client.post("/api/servers", json={
+            "name": "web", "address": "http://localhost", "type": "http"
+        })).json()
+        await client.patch(f"/api/servers/{srv['id']}/maintenance")
+        r = await client.patch(f"/api/servers/{srv['id']}/maintenance")
+        assert r.json()["maintenance_mode"] is False
+
+    async def test_toggle_maintenance_nonexistent_returns_404(self, client):
+        r = await client.patch("/api/servers/9999/maintenance")
+        assert r.status_code == 404
+
+    async def test_maintenance_flag_in_server_list(self, client):
+        srv = (await client.post("/api/servers", json={
+            "name": "db", "address": "http://localhost", "type": "http"
+        })).json()
+        await client.patch(f"/api/servers/{srv['id']}/maintenance")
+        servers = (await client.get("/api/servers")).json()
+        match = next(s for s in servers if s["id"] == srv["id"])
+        assert match["maintenance_mode"] is True
+
+
+class TestTaskCount:
+    async def test_total_completed_increments(self, client):
+        t = (await client.post("/api/tasks", json={"task": "Count me"})).json()
+        before = (await client.get("/api/tasks")).json()["total_completed"]
+        await client.put(f"/api/tasks/{t['id']}/complete")
+        after = (await client.get("/api/tasks")).json()["total_completed"]
+        assert after == before + 1
+
+    async def test_completed_count_in_response(self, client):
+        data = (await client.get("/api/tasks")).json()
+        assert "total_completed" in data
+        assert isinstance(data["total_completed"], int)

@@ -35,7 +35,8 @@ CREATE TABLE IF NOT EXISTS servers (
     total_checks      INTEGER NOT NULL DEFAULT 0,
     successful_checks INTEGER NOT NULL DEFAULT 0,
     last_error        TEXT,
-    last_checked      TEXT
+    last_checked      TEXT,
+    maintenance_mode  INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS server_daily_stats (
@@ -76,3 +77,11 @@ async def init_db(db: aiosqlite.Connection) -> None:
         pass  # column already exists
     await db.execute(_SEED_PET_SQL)
     await db.commit()
+    # Migration: add maintenance_mode column to existing databases
+    try:
+        await db.execute(
+            "ALTER TABLE servers ADD COLUMN maintenance_mode INTEGER NOT NULL DEFAULT 0"
+        )
+        await db.commit()
+    except aiosqlite.OperationalError:
+        pass  # column already exists

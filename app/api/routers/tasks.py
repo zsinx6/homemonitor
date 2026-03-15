@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 import aiosqlite
 
 from app.api.dependencies import get_db, get_task_service
-from app.api.models import TaskCreate, TaskOut
+from app.api.models import TaskCreate, TaskListResponse, TaskOut
 from app.infrastructure.repositories import task_repo
 
 router = APIRouter()
@@ -22,10 +22,11 @@ def _task_out(t) -> TaskOut:
     )
 
 
-@router.get("/tasks", response_model=list[TaskOut])
+@router.get("/tasks", response_model=TaskListResponse)
 async def list_tasks(db: aiosqlite.Connection = Depends(get_db)):
     tasks = await task_repo.list_tasks(db)
-    return [_task_out(t) for t in tasks]
+    total = await task_repo.count_completed(db)
+    return TaskListResponse(tasks=[_task_out(t) for t in tasks], total_completed=total)
 
 
 @router.post("/tasks", response_model=TaskOut, status_code=201)
