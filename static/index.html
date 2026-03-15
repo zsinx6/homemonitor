@@ -284,7 +284,8 @@
 
     #tab-infra:checked ~ .tab-nav label[for="tab-infra"],
     #tab-tasks:checked ~ .tab-nav label[for="tab-tasks"],
-    #tab-maint:checked ~ .tab-nav label[for="tab-maint"] {
+    #tab-maint:checked ~ .tab-nav label[for="tab-maint"],
+    #tab-history:checked ~ .tab-nav label[for="tab-history"] {
       color: var(--green);
       border-bottom: 3px solid var(--green);
       margin-bottom: -3px;
@@ -294,7 +295,8 @@
 
     #tab-infra:checked ~ #panel-infra,
     #tab-tasks:checked ~ #panel-tasks,
-    #tab-maint:checked ~ #panel-maint { display: block; }
+    #tab-maint:checked ~ #panel-maint,
+    #tab-history:checked ~ #panel-history { display: block; }
 
     /* =====================================================================
        INFRASTRUCTURE TAB
@@ -435,6 +437,36 @@
 
     /* Add task form */
     #add-task-form { margin-top: 8px; }
+
+    /* =====================================================================
+       HISTORY TAB
+    ===================================================================== */
+    #history-summary {
+      display: flex;
+      justify-content: space-around;
+      margin-bottom: 16px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .hist-stat { text-align: center; }
+    .hist-stat-value { font-size: 16px; color: var(--green); }
+    .hist-stat-label { font-size: 7px; color: var(--grey); margin-top: 2px; }
+
+    #memory-list { display: flex; flex-direction: column; gap: 6px; max-height: 60vh; overflow-y: auto; }
+    .memory-row {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      padding: 6px 8px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      font-size: 8px;
+    }
+    .memory-icon { font-size: 10px; flex-shrink: 0; width: 16px; text-align: center; }
+    .memory-text { flex: 1; color: var(--white); line-height: 1.4; }
+    .memory-detail { color: var(--green); }
+    .memory-time { font-size: 7px; color: var(--grey); flex-shrink: 0; }
 
     /* =====================================================================
        MAINTENANCE TAB
@@ -588,11 +620,13 @@
 <input class="tab-inputs" type="radio" name="tab" id="tab-infra" checked>
 <input class="tab-inputs" type="radio" name="tab" id="tab-tasks">
 <input class="tab-inputs" type="radio" name="tab" id="tab-maint">
+<input class="tab-inputs" type="radio" name="tab" id="tab-history">
 
 <nav class="tab-nav">
   <label class="tab-label" for="tab-infra">⚡ INFRA</label>
   <label class="tab-label" for="tab-tasks">✓ TASKS</label>
   <label class="tab-label" for="tab-maint">💾 MAINT</label>
+  <label class="tab-label" for="tab-history">📜 HIST</label>
 </nav>
 
 <!-- =====================================================================
@@ -679,6 +713,35 @@
     </button>
     <div style="font-size:7px;color:var(--grey);text-align:center;margin-top:6px">
       Reviving resets EXP to 0 and restores 5 HP.
+    </div>
+  </div>
+</div>
+
+<!-- =====================================================================
+     HISTORY TAB
+===================================================================== -->
+<div class="tab-content" id="panel-history">
+  <div id="history-summary">
+    <div class="hist-stat">
+      <div class="hist-stat-value" id="hist-total">—</div>
+      <div class="hist-stat-label">TOTAL EVENTS</div>
+    </div>
+    <div class="hist-stat">
+      <div class="hist-stat-value" id="hist-down" style="color:var(--red)">—</div>
+      <div class="hist-stat-label">SERVER ALERTS</div>
+    </div>
+    <div class="hist-stat">
+      <div class="hist-stat-value" id="hist-tasks" style="color:var(--green)">—</div>
+      <div class="hist-stat-label">TASKS DONE</div>
+    </div>
+    <div class="hist-stat">
+      <div class="hist-stat-value" id="hist-backups" style="color:var(--gold)">—</div>
+      <div class="hist-stat-label">BACKUPS</div>
+    </div>
+  </div>
+  <div id="memory-list">
+    <div style="font-size:8px;color:var(--grey);text-align:center;padding:20px 0">
+      No memories yet. Start monitoring to build history.
     </div>
   </div>
 </div>
@@ -1042,17 +1105,67 @@ ${completed.map(t => `
 /* =====================================================================
    POLL
 ===================================================================== */
+/* =====================================================================
+   RENDER MEMORIES (History tab)
+===================================================================== */
+const MEMORY_META = {
+  server_down:     { icon: "🔴", label: "went DOWN" },
+  server_recovery: { icon: "🟢", label: "came back UP" },
+  task_complete:   { icon: "✅", label: "Task done" },
+  backup:          { icon: "💾", label: "Backup ran" },
+  level_up:        { icon: "⬆️", label: "Level up →" },
+  digivolution:    { icon: "✨", label: "Digivolved →" },
+  death:           { icon: "💀", label: "Fell in battle" },
+  revival:         { icon: "💫", label: "Revived" },
+  rename:          { icon: "✎", label: "Renamed →" },
+};
+
+function relTime(isoStr) {
+  const diff = Math.floor((Date.now() - new Date(isoStr)) / 1000);
+  if (diff < 60)   return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+  return `${Math.floor(diff/86400)}d ago`;
+}
+
+function renderMemories(data) {
+  // Update summary counters
+  const s = data.summary || {};
+  document.getElementById("hist-total").textContent   = data.total ?? 0;
+  document.getElementById("hist-down").textContent    = (s.server_down || 0);
+  document.getElementById("hist-tasks").textContent   = (s.task_complete || 0);
+  document.getElementById("hist-backups").textContent = (s.backup || 0);
+
+  const list = document.getElementById("memory-list");
+  if (!data.memories || data.memories.length === 0) {
+    list.innerHTML = '<div style="font-size:8px;color:var(--grey);text-align:center;padding:20px 0">No memories yet. Start monitoring to build history.</div>';
+    return;
+  }
+
+  list.innerHTML = data.memories.map(m => {
+    const meta  = MEMORY_META[m.event_type] || { icon: "❓", label: m.event_type };
+    const detail = m.detail ? `<span class="memory-detail"> ${m.detail}</span>` : "";
+    return `<div class="memory-row">
+      <span class="memory-icon">${meta.icon}</span>
+      <span class="memory-text">${meta.label}${detail}</span>
+      <span class="memory-time">${relTime(m.occurred_at)}</span>
+    </div>`;
+  }).join("");
+}
+
 async function poll() {
   // Fetch all resources in parallel so one failure doesn't block others
-  const [petR, serversR, tasksR] = await Promise.allSettled([
+  const [petR, serversR, tasksR, memoriesR] = await Promise.allSettled([
     api("GET", "/api/pet"),
     api("GET", "/api/servers"),
     api("GET", "/api/tasks"),
+    api("GET", "/api/memories?limit=50"),
   ]);
 
-  const petResult     = petR.status     === "fulfilled" ? petR.value     : null;
-  const serversResult = serversR.status === "fulfilled" ? serversR.value : null;
-  const tasksResult   = tasksR.status   === "fulfilled" ? tasksR.value   : null;
+  const petResult      = petR.status      === "fulfilled" ? petR.value      : null;
+  const serversResult  = serversR.status  === "fulfilled" ? serversR.value  : null;
+  const tasksResult    = tasksR.status    === "fulfilled" ? tasksR.value    : null;
+  const memoriesResult = memoriesR.status === "fulfilled" ? memoriesR.value : null;
 
   if (petResult) {
     showError(false);
@@ -1063,7 +1176,8 @@ async function poll() {
     state.servers = serversResult;
     renderServers(serversResult);
   }
-  if (tasksResult)   renderTasks(tasksResult);
+  if (tasksResult)    renderTasks(tasksResult);
+  if (memoriesResult) renderMemories(memoriesResult);
   if (!petResult && !serversResult && !tasksResult) showError(true);
 }
 

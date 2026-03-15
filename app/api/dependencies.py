@@ -10,7 +10,7 @@ from fastapi import Request
 
 from app.domain.phrases import PhraseSelector
 from app.domain.static_phrase_service import StaticPhraseService
-from app.infrastructure.adapters import PetRepoAdapter, ServerRepoAdapter, TaskRepoAdapter
+from app.infrastructure.adapters import MemoryRepoAdapter, PetRepoAdapter, ServerRepoAdapter, TaskRepoAdapter
 from app.services.monitor_service import MonitorService
 from app.services.pet_service import PetService
 from app.services.task_service import TaskService
@@ -66,9 +66,9 @@ def get_llm_chat_service():
 
 
 def get_pet_service() -> PetService:
-    return PetService(pet_repo=PetRepoAdapter())
+    return PetService(pet_repo=PetRepoAdapter(), memory_repo=MemoryRepoAdapter())
 
 
 def get_task_service() -> TaskService:
-    return TaskService(pet_repo=PetRepoAdapter(), task_repo=TaskRepoAdapter())
+    return TaskService(pet_repo=PetRepoAdapter(), task_repo=TaskRepoAdapter(), memory_repo=MemoryRepoAdapter())
 

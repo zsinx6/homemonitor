@@ -5,6 +5,7 @@ import asyncio
 from dataclasses import replace
 from datetime import datetime, timezone
 
+from app.domain.memory import MemoryType
 from app.domain.pet import apply_monitor_cycle
 from app.domain.server import ServerCheckResult, detect_state_transitions
 from app.infrastructure.checkers.base import ServerChecker
@@ -17,30 +18,28 @@ class MonitorService:
         server_repo,
         http_checker: ServerChecker,
         ping_checker: ServerChecker,
+        memory_repo=None,
     ) -> None:
         self._pet_repo = pet_repo
         self._server_repo = server_repo
         self._http_checker = http_checker
         self._ping_checker = ping_checker
+        self._memory_repo = memory_repo
 
     async def run_cycle(self, db) -> None:
         """Run one full monitoring cycle: check all servers, update pet state."""
         servers = await self._server_repo.list_servers(db)
 
-        # Build an ID-to-name map and snapshot previous statuses keyed by ID
-        # to avoid collisions from duplicate names and survive renames
         id_to_name = {s.id: s.name for s in servers}
         previous_statuses = {s.id: s.status for s in servers}
         maintenance_ids = {s.id for s in servers if s.maintenance_mode}
 
-        # Run all checks in parallel
         tasks = [
             self._check_server(s.id, s.name, s.address, s.port, s.type)
             for s in servers
         ]
         results: list[ServerCheckResult] = await asyncio.gather(*tasks)
 
-        # Persist check results and build current status snapshot keyed by ID
         checked_at = datetime.now(timezone.utc)
         date_str = checked_at.strftime("%Y-%m-%d")
         current_statuses: dict[int, str] = {}
@@ -54,13 +53,10 @@ class MonitorService:
             )
             current_statuses[result.server_id] = "UP" if result.is_up else "DOWN"
 
-        # Detect transitions — returns lists of server IDs
         newly_down_ids, newly_recovered_ids = detect_state_transitions(
             previous_statuses, current_statuses
         )
 
-        # Map IDs back to names for domain/phrase use
-        # Exclude maintenance servers — they don't damage the pet
         newly_down_names = [
             id_to_name[i] for i in newly_down_ids
             if i in id_to_name and i not in maintenance_ids
@@ -70,14 +66,12 @@ class MonitorService:
             if i in id_to_name and i not in maintenance_ids
         ]
 
-        # Always pass ALL currently-down non-maintenance servers so HP drains every cycle
         all_currently_down_names = [
             id_to_name[sid]
             for sid, status in current_statuses.items()
             if status == "DOWN" and sid in id_to_name and sid not in maintenance_ids
         ]
 
-        # Update pet state
         pet = await self._pet_repo.get_pet(db)
         updated_pet = apply_monitor_cycle(
             pet,
@@ -92,6 +86,23 @@ class MonitorService:
         ):
             updated_pet = replace(updated_pet, last_event=None)
         await self._pet_repo.save_pet(db, updated_pet)
+
+        # Record memories for significant events this cycle
+        if self._memory_repo:
+            for name in newly_down_names:
+                await self._memory_repo.add_memory(db, MemoryType.SERVER_DOWN, name)
+            for name in newly_recovered_names:
+                await self._memory_repo.add_memory(db, MemoryType.SERVER_RECOVERY, name)
+            # Death this cycle (pet was alive, now dead)
+            if updated_pet.is_dead and not pet.is_dead:
+                await self._memory_repo.add_memory(db, MemoryType.DEATH)
+            # Level-up or digivolution from EXP gain this cycle
+            if updated_pet.last_event:
+                if updated_pet.last_event.startswith("digivolution:"):
+                    species = updated_pet.last_event.split(":", 1)[1]
+                    await self._memory_repo.add_memory(db, MemoryType.DIGIVOLUTION, species)
+                elif updated_pet.last_event == "level_up":
+                    await self._memory_repo.add_memory(db, MemoryType.LEVEL_UP, str(updated_pet.level))
 
     async def _check_server(
         self,

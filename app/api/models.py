@@ -167,3 +167,20 @@ class PetRenameRequest(BaseModel):
         if not v:
             raise ValueError("must not be blank or whitespace-only")
         return v
+
+
+# ---------------------------------------------------------------------------
+# Memories
+# ---------------------------------------------------------------------------
+
+class MemoryOut(BaseModel):
+    id: int
+    event_type: str
+    detail: Optional[str]
+    occurred_at: datetime
+
+
+class MemoryListResponse(BaseModel):
+    memories: list[MemoryOut]
+    total: int
+    summary: dict[str, int] = Field(default_factory=dict)

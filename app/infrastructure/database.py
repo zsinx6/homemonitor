@@ -60,6 +60,16 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE INDEX IF NOT EXISTS idx_servers_status ON servers(status);
 CREATE INDEX IF NOT EXISTS idx_server_daily_stats ON server_daily_stats(server_id, date DESC);
 CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(is_completed);
+
+CREATE TABLE IF NOT EXISTS pet_memories (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type  TEXT    NOT NULL,
+    detail      TEXT,
+    occurred_at TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_memories_occurred ON pet_memories(occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_memories_type ON pet_memories(event_type);
 """
 
 _SEED_PET_SQL = """

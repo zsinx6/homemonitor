@@ -1,7 +1,7 @@
 """Tests for services using mock repos and mock checkers."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from unittest.mock import AsyncMock
@@ -102,6 +102,12 @@ class FakeTask:
     is_completed: bool = False
     created_at: datetime = field(default_factory=_now)
     completed_at: Optional[datetime] = None
+
+
+class MockDb:
+    """Minimal async-compatible DB stub for services that call db.commit() directly."""
+    async def commit(self):
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -483,3 +489,120 @@ class TestMonitorServiceMaintenanceRecovery:
         await service.run_cycle(db=None)
         # HP should not decrease because server is in maintenance
         assert pet_repo.pet.hp == C.HP_MAX
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Memory recording tests
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class MockMemoryRepo:
+    """Collects add_memory calls for assertion."""
+    calls: list = field(default_factory=list)
+
+    async def add_memory(self, db, event_type, detail=None, occurred_at=None):
+        self.calls.append({"event_type": event_type, "detail": detail})
+
+
+class TestPetServiceMemoryRecording:
+    def _make_service(self, pet, memory_repo):
+        return PetService(pet_repo=MockPetRepo(pet=pet), memory_repo=memory_repo)
+
+    async def test_backup_records_backup_memory(self):
+        mem = MockMemoryRepo()
+        svc = self._make_service(_default_pet(hp=C.HP_MAX), mem)
+        await svc.backup(db=None)
+        types = [c["event_type"] for c in mem.calls]
+        assert "backup" in types
+
+    async def test_revive_records_revival_memory(self):
+        mem = MockMemoryRepo()
+        pet = _default_pet(hp=0)
+        pet = replace(pet, is_dead=True)
+        svc = self._make_service(pet, mem)
+        await svc.revive(db=None)
+        types = [c["event_type"] for c in mem.calls]
+        assert "revival" in types
+
+    async def test_no_memory_when_no_repo(self):
+        svc = self._make_service(_default_pet(), memory_repo=None)
+        # Should not raise even without memory_repo
+        await svc.backup(db=None)
+
+
+class TestTaskServiceMemoryRecording:
+    def _make_service(self, pet, memory_repo):
+        task_repo = MockTaskRepo(tasks=[FakeTask(id=1, task="Deploy nginx", is_completed=False)])
+        return TaskService(
+            pet_repo=MockPetRepo(pet=pet),
+            task_repo=task_repo,
+            memory_repo=memory_repo,
+        )
+
+    async def test_complete_task_records_task_complete(self):
+        mem = MockMemoryRepo()
+        svc = self._make_service(_default_pet(), mem)
+        await svc.complete_task(db=MockDb(), task_id=1)
+        types = [c["event_type"] for c in mem.calls]
+        assert "task_complete" in types
+        details = [c["detail"] for c in mem.calls if c["event_type"] == "task_complete"]
+        assert "Deploy nginx" in details
+
+    async def test_no_memory_when_no_repo(self):
+        svc = self._make_service(_default_pet(), memory_repo=None)
+        await svc.complete_task(db=MockDb(), task_id=1)
+
+
+class TestMonitorServiceMemoryRecording:
+    def _make_service(self, servers, check_results, initial_pet=None, memory_repo=None):
+        pet_repo_inst = MockPetRepo(pet=initial_pet or _default_pet())
+        server_repo_inst = MockServerRepo(servers=servers)
+        result_map = {r.server_id: r for r in check_results}
+
+        async def mock_check(server_id, name, address, port):
+            return result_map.get(server_id, ServerCheckResult(server_id, name, True, None))
+
+        from unittest.mock import MagicMock
+        http_checker = MagicMock()
+        http_checker.check = mock_check
+        ping_checker = MagicMock()
+        ping_checker.check = mock_check
+
+        svc = MonitorService(
+            pet_repo=pet_repo_inst,
+            server_repo=server_repo_inst,
+            http_checker=http_checker,
+            ping_checker=ping_checker,
+            memory_repo=memory_repo,
+        )
+        return svc, pet_repo_inst
+
+    async def test_server_down_records_memory(self):
+        mem = MockMemoryRepo()
+        server = FakeServer(id=1, name="nginx", address="http://x", port=80,
+                            type="http", status="UP", maintenance_mode=False)
+        result = ServerCheckResult(server_id=1, name="nginx", is_up=False, error="timeout")
+        svc, _ = self._make_service([server], [result], memory_repo=mem)
+        await svc.run_cycle(db=None)
+        types = [c["event_type"] for c in mem.calls]
+        assert "server_down" in types
+        details = [c["detail"] for c in mem.calls if c["event_type"] == "server_down"]
+        assert "nginx" in details
+
+    async def test_server_recovery_records_memory(self):
+        mem = MockMemoryRepo()
+        server = FakeServer(id=1, name="nginx", address="http://x", port=80,
+                            type="http", status="DOWN", maintenance_mode=False)
+        result = ServerCheckResult(server_id=1, name="nginx", is_up=True, error=None)
+        svc, _ = self._make_service([server], [result], memory_repo=mem)
+        await svc.run_cycle(db=None)
+        types = [c["event_type"] for c in mem.calls]
+        assert "server_recovery" in types
+
+    async def test_no_memory_when_no_repo(self):
+        server = FakeServer(id=1, name="nginx", address="http://x", port=80,
+                            type="http", status="UP", maintenance_mode=False)
+        result = ServerCheckResult(server_id=1, name="nginx", is_up=False, error="timeout")
+        svc, _ = self._make_service([server], [result], memory_repo=None)
+        # Should not raise
+        await svc.run_cycle(db=None)

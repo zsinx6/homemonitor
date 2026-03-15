@@ -2,14 +2,21 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Optional
 
 from app.domain import constants as C
+from app.domain.memory import MemoryType
 from app.domain.pet import apply_backup, apply_interact, apply_revive, Pet
 
 
 class PetService:
-    def __init__(self, pet_repo) -> None:
+    def __init__(self, pet_repo, memory_repo=None) -> None:
         self._pet_repo = pet_repo
+        self._memory_repo = memory_repo
+
+    async def _record(self, db, event_type: str, detail: Optional[str] = None) -> None:
+        if self._memory_repo:
+            await self._memory_repo.add_memory(db, event_type, detail)
 
     async def interact(self, db) -> tuple[Pet, bool]:
         """Interact with the pet. Returns (updated_pet, on_cooldown).
@@ -25,6 +32,12 @@ class PetService:
                 return pet, True
         updated = apply_interact(pet)
         await self._pet_repo.save_pet(db, updated)
+        # Record level-up or digivolution if it occurred
+        if updated.last_event:
+            if updated.last_event.startswith("digivolution:"):
+                await self._record(db, MemoryType.DIGIVOLUTION, updated.last_event.split(":", 1)[1])
+            elif updated.last_event == "level_up":
+                await self._record(db, MemoryType.LEVEL_UP, str(updated.level))
         return updated, False
 
     async def backup(self, db) -> tuple[Pet, bool]:
@@ -41,6 +54,13 @@ class PetService:
                 return pet, True
         updated = apply_backup(pet)
         await self._pet_repo.save_pet(db, updated)
+        await self._record(db, MemoryType.BACKUP)
+        # Also capture level-up if EXP gain from backup caused it
+        if updated.last_event:
+            if updated.last_event.startswith("digivolution:"):
+                await self._record(db, MemoryType.DIGIVOLUTION, updated.last_event.split(":", 1)[1])
+            elif updated.last_event == "level_up":
+                await self._record(db, MemoryType.LEVEL_UP, str(updated.level))
         return updated, False
 
     async def revive(self, db) -> Pet:
@@ -50,4 +70,5 @@ class PetService:
             return pet
         updated = apply_revive(pet)
         await self._pet_repo.save_pet(db, updated)
+        await self._record(db, MemoryType.REVIVAL)
         return updated

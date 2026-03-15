@@ -11,9 +11,10 @@ import aiosqlite
 from app.api.dependencies import get_db, get_pet_service, get_phrase_selector
 from app.api.models import PetBackupResponse, PetInteractResponse, PetRenameRequest, PetResponse
 from app.domain import constants as C
+from app.domain.memory import MemoryType
 from app.domain.pet import get_next_evolution_level
 from app.domain.phrases import PhraseContext
-from app.infrastructure.repositories import pet_repo
+from app.infrastructure.repositories import memory_repo, pet_repo
 from app.services import context_service
 
 router = APIRouter()
@@ -183,4 +184,5 @@ async def rename_pet(
 ):
     """Set a custom display name for the pet (resets on next evolution)."""
     await pet_repo.rename_pet(db, body.name)
+    await memory_repo.add_memory(db, MemoryType.RENAME, body.name)
     return await _build_pet_response(db, phrase_selector)

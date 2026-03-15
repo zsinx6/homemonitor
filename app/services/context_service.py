@@ -12,8 +12,9 @@ from typing import Optional
 import aiosqlite
 
 from app.domain import constants as C
+from app.domain.memory import Memory, MemoryType
 from app.domain.pet import Pet, derive_status, get_evolution
-from app.infrastructure.repositories import pet_repo, server_repo, task_repo
+from app.infrastructure.repositories import memory_repo, pet_repo, server_repo, task_repo
 
 
 @dataclass
@@ -47,6 +48,9 @@ class ContextSnapshot:
 
     # ── Meta ─────────────────────────────────────────────────────────────────
     generated_at: datetime
+
+    # ── Recent history (for LLM context) ─────────────────────────────────────
+    recent_memories: list[Memory] = field(default_factory=list)
 
     # Raw pet — not serialised; used internally to avoid re-querying
     _raw_pet: Pet = field(repr=False, compare=False, default=None)  # type: ignore[assignment]
@@ -127,15 +131,44 @@ class ContextSnapshot:
         else:
             parts.append(f"Backup status: {self.days_since_backup} day(s) ago — healthy.")
 
+        if self.recent_memories:
+            now = datetime.now(timezone.utc)
+            memory_parts: list[str] = []
+            for m in self.recent_memories[:10]:
+                delta = now - m.occurred_at
+                hours = int(delta.total_seconds() // 3600)
+                time_str = f"{hours}h ago" if hours < 48 else f"{hours // 24}d ago"
+                if m.event_type == MemoryType.SERVER_DOWN:
+                    memory_parts.append(f"{m.detail} went DOWN ({time_str})")
+                elif m.event_type == MemoryType.SERVER_RECOVERY:
+                    memory_parts.append(f"{m.detail} recovered ({time_str})")
+                elif m.event_type == MemoryType.TASK_COMPLETE:
+                    memory_parts.append(f"completed '{m.detail}' ({time_str})")
+                elif m.event_type == MemoryType.BACKUP:
+                    memory_parts.append(f"backup ran ({time_str})")
+                elif m.event_type == MemoryType.LEVEL_UP:
+                    memory_parts.append(f"reached level {m.detail} ({time_str})")
+                elif m.event_type == MemoryType.DIGIVOLUTION:
+                    memory_parts.append(f"digivolved into {m.detail} ({time_str})")
+                elif m.event_type == MemoryType.DEATH:
+                    memory_parts.append(f"fell in battle ({time_str})")
+                elif m.event_type == MemoryType.REVIVAL:
+                    memory_parts.append(f"was revived ({time_str})")
+                elif m.event_type == MemoryType.RENAME:
+                    memory_parts.append(f"renamed to {m.detail} ({time_str})")
+            if memory_parts:
+                parts.append("Recent history: " + "; ".join(memory_parts) + ".")
+
         return " ".join(parts)
 
 
 async def build_snapshot(db: aiosqlite.Connection) -> ContextSnapshot:
-    """Aggregate all state into a ContextSnapshot (3–4 SQLite queries)."""
+    """Aggregate all state into a ContextSnapshot (4–5 SQLite queries)."""
     pet = await pet_repo.get_pet(db)
     servers = await server_repo.list_servers(db)
     tasks = await task_repo.list_tasks(db)
     total_completed = await task_repo.count_completed(db)
+    recent_mems = await memory_repo.get_recent(db, limit=10)
 
     any_down = any(s.status == "DOWN" and not s.maintenance_mode for s in servers)
     status = derive_status(pet, any_server_down=any_down)
@@ -178,5 +211,6 @@ async def build_snapshot(db: aiosqlite.Connection) -> ContextSnapshot:
         tasks_completed_total=total_completed,
         days_since_backup=days_since_backup,
         generated_at=datetime.now(timezone.utc),
+        recent_memories=recent_mems,
         _raw_pet=pet,
     )

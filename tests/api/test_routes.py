@@ -561,3 +561,73 @@ class TestEdgeCases:
         data = r.json()
         assert "on_cooldown" in data
         assert "phrase" in data
+
+
+class TestMemories:
+    """GET /api/memories — pet history log."""
+
+    async def test_memories_empty_on_fresh_db(self, client):
+        r = await client.get("/api/memories")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["total"] == 0
+        assert data["memories"] == []
+        assert data["summary"] == {}
+
+    async def test_backup_creates_memory(self, client):
+        await client.post("/api/pet/backup")
+        r = await client.get("/api/memories")
+        assert r.status_code == 200
+        memories = r.json()["memories"]
+        types = [m["event_type"] for m in memories]
+        assert "backup" in types
+
+    async def test_rename_creates_memory(self, client):
+        await client.patch("/api/pet/rename", json={"name": "Sparky"})
+        r = await client.get("/api/memories")
+        memories = r.json()["memories"]
+        rename_mems = [m for m in memories if m["event_type"] == "rename"]
+        assert len(rename_mems) == 1
+        assert rename_mems[0]["detail"] == "Sparky"
+
+    async def test_memories_pagination_limit(self, client):
+        # Create 3 memories via rename
+        for name in ["A", "B", "C"]:
+            await client.patch("/api/pet/rename", json={"name": name})
+        r = await client.get("/api/memories?limit=2&offset=0")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["total"] == 3
+        assert len(data["memories"]) == 2
+
+    async def test_memories_pagination_offset(self, client):
+        for name in ["X", "Y", "Z"]:
+            await client.patch("/api/pet/rename", json={"name": name})
+        r = await client.get("/api/memories?limit=10&offset=2")
+        data = r.json()
+        assert len(data["memories"]) == 1
+
+    async def test_memories_summary_counts(self, client):
+        await client.post("/api/pet/backup")
+        await client.patch("/api/pet/rename", json={"name": "NewName"})
+        r = await client.get("/api/memories")
+        summary = r.json()["summary"]
+        assert summary.get("backup", 0) >= 1
+        assert summary.get("rename", 0) >= 1
+
+    async def test_memory_fields_present(self, client):
+        await client.post("/api/pet/backup")
+        memories = (await client.get("/api/memories")).json()["memories"]
+        m = memories[0]
+        assert "id" in m
+        assert "event_type" in m
+        assert "detail" in m
+        assert "occurred_at" in m
+
+    async def test_memories_ordered_newest_first(self, client):
+        await client.patch("/api/pet/rename", json={"name": "First"})
+        await client.patch("/api/pet/rename", json={"name": "Second"})
+        memories = (await client.get("/api/memories")).json()["memories"]
+        # Newest (Second) should be first
+        assert memories[0]["detail"] == "Second"
+        assert memories[1]["detail"] == "First"

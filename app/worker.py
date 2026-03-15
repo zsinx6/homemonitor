@@ -11,7 +11,7 @@ import logging
 import aiosqlite
 
 from app.domain import constants as C
-from app.infrastructure.adapters import PetRepoAdapter, ServerRepoAdapter
+from app.infrastructure.adapters import MemoryRepoAdapter, PetRepoAdapter, ServerRepoAdapter
 from app.infrastructure.checkers.http_checker import HttpChecker
 from app.infrastructure.checkers.ping_checker import PingChecker
 from app.services.monitor_service import MonitorService
@@ -27,6 +27,7 @@ def _build_monitor_service() -> MonitorService:
         server_repo=ServerRepoAdapter(),
         http_checker=HttpChecker(),
         ping_checker=PingChecker(),
+        memory_repo=MemoryRepoAdapter(),
     )
 
 

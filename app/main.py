@@ -43,12 +43,13 @@ def create_app(db_path: str = DB_PATH) -> FastAPI:
     app.state.db_path = db_path
 
     # API routers (registered after import to avoid circular deps)
-    from app.api.routers import pet, servers, tasks, chat, status  # noqa: PLC0415
+    from app.api.routers import pet, servers, tasks, chat, status, memories  # noqa: PLC0415
     app.include_router(pet.router, prefix="/api")
     app.include_router(servers.router, prefix="/api")
     app.include_router(tasks.router, prefix="/api")
     app.include_router(chat.router, prefix="/api")
     app.include_router(status.router, prefix="/api")
+    app.include_router(memories.router, prefix="/api")
 
     # Serve the SPA
     static_dir = Path(__file__).parent.parent / "static"

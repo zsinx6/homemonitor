@@ -6,13 +6,14 @@ adapter definitions in multiple places.
 """
 from __future__ import annotations
 
-from app.infrastructure.repositories import pet_repo, server_repo, task_repo
+from app.infrastructure.repositories import memory_repo, pet_repo, server_repo, task_repo
 
 
 class PetRepoAdapter:
     async def get_pet(self, db): return await pet_repo.get_pet(db)
     async def save_pet(self, db, p, *, commit: bool = True): await pet_repo.save_pet(db, p, commit=commit)
     async def clear_last_event(self, db): await pet_repo.clear_last_event(db)
+    async def rename_pet(self, db, name): return await pet_repo.rename_pet(db, name)
 
 
 class ServerRepoAdapter:
@@ -24,3 +25,9 @@ class ServerRepoAdapter:
 class TaskRepoAdapter:
     async def get_task(self, db, tid): return await task_repo.get_task(db, tid)
     async def complete_task(self, db, tid, *, commit: bool = True): return await task_repo.complete_task(db, tid, commit=commit)
+
+
+class MemoryRepoAdapter:
+    async def add_memory(self, db, event_type, detail=None, occurred_at=None):
+        return await memory_repo.add_memory(db, event_type, detail, occurred_at)
+
