@@ -132,3 +132,23 @@ class TaskCreate(BaseModel):
         if not v:
             raise ValueError("must not be blank or whitespace-only")
         return v
+
+
+# ---------------------------------------------------------------------------
+# Chat
+# ---------------------------------------------------------------------------
+
+class ChatRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=500)
+
+    @field_validator("message", mode="before")
+    @classmethod
+    def strip_message(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("must not be blank or whitespace-only")
+        return v
+
+
+class ChatResponse(BaseModel):
+    response: str

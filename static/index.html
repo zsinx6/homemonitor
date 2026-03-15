@@ -449,6 +449,45 @@
     #backup-counter.warning  { color: var(--yellow); }
     #backup-counter-label   { font-size: 8px; text-align: center; color: var(--grey); margin-bottom: 24px; }
 
+    /* =====================================================================
+       CHAT UI
+    ===================================================================== */
+    #chat-row {
+      display: flex;
+      gap: 4px;
+      margin-top: 6px;
+      align-items: center;
+    }
+
+    #chat-input {
+      flex: 1;
+      font-size: 7px !important;
+      padding: 4px 6px;
+      background: var(--bg);
+      border: 2px solid var(--border);
+      color: var(--white);
+      font-family: inherit;
+      min-width: 0;
+    }
+
+    #chat-input:focus { outline: none; border-color: var(--blue); }
+    #chat-input::placeholder { color: var(--grey); }
+
+    #chat-btn {
+      font-size: 8px !important;
+      padding: 4px 8px !important;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    #chat-thinking {
+      font-size: 6px;
+      color: var(--grey);
+      text-align: center;
+      min-height: 10px;
+      margin-top: 2px;
+    }
+
     #backup-btn {
       display: block;
       width: 100%;
@@ -521,6 +560,13 @@
     <div id="speech-bubble">
       <span id="speech-text">Booting up... scanning infrastructure...</span>
     </div>
+
+    <div id="chat-row">
+      <input id="chat-input" type="text" placeholder="Ask your Digimon..." maxlength="200"
+             onkeydown="if(event.key==='Enter') sendChat()">
+      <button id="chat-btn" class="nes-btn is-primary" onclick="sendChat()">💬</button>
+    </div>
+    <div id="chat-thinking"></div>
   </div>
 </header>
 
@@ -1139,6 +1185,32 @@ async function doRevive() {
   } catch (_) {}
   btn.disabled = false;
   btn.textContent = "💀 REVIVE PET";
+}
+
+async function sendChat() {
+  const input   = document.getElementById("chat-input");
+  const btn     = document.getElementById("chat-btn");
+  const thinking = document.getElementById("chat-thinking");
+  const msg = input.value.trim();
+  if (!msg) return;
+
+  btn.disabled = true;
+  input.disabled = true;
+  setSpeech("...");
+  thinking.textContent = "thinking...";
+
+  try {
+    const res = await api("POST", "/api/pet/chat", { message: msg });
+    setSpeech(res.response);
+    input.value = "";
+  } catch (_) {
+    setSpeech("My communication circuits are busy. Try again.");
+  } finally {
+    btn.disabled = false;
+    input.disabled = false;
+    thinking.textContent = "";
+    input.focus();
+  }
 }
 
 // Backup cooldown countdown — seeds from server-provided remaining seconds and counts down locally

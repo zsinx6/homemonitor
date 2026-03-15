@@ -406,3 +406,72 @@ class TestTaskCount:
         data = (await client.get("/api/tasks")).json()
         assert "total_completed" in data
         assert isinstance(data["total_completed"], int)
+
+
+class TestStatusEndpoint:
+    async def test_status_returns_200(self, client):
+        r = await client.get("/api/status")
+        assert r.status_code == 200
+
+    async def test_status_structure(self, client):
+        data = (await client.get("/api/status")).json()
+        assert "pet" in data
+        assert "infrastructure" in data
+        assert "tasks" in data
+        assert "maintenance" in data
+        assert "generated_at" in data
+
+    async def test_status_pet_fields(self, client):
+        pet = (await client.get("/api/status")).json()["pet"]
+        assert "name" in pet
+        assert "level" in pet
+        assert "hp" in pet
+        assert "exp" in pet
+        assert "status" in pet
+        assert "is_dead" in pet
+
+    async def test_status_infra_fields(self, client):
+        infra = (await client.get("/api/status")).json()["infrastructure"]
+        assert "servers_total" in infra
+        assert "servers_up" in infra
+        assert "servers_down" in infra
+        assert "overall_uptime_pct" in infra
+        assert "down_servers" in infra
+
+    async def test_status_tasks_fields(self, client):
+        data = (await client.get("/api/status")).json()["tasks"]
+        assert "pending" in data
+        assert "completed_total" in data
+
+    async def test_status_reflects_server_count(self, client):
+        await client.post("/api/servers", json={
+            "name": "test", "address": "http://localhost", "type": "http"
+        })
+        infra = (await client.get("/api/status")).json()["infrastructure"]
+        assert infra["servers_total"] == 1
+
+
+class TestChatEndpoint:
+    async def test_chat_returns_200(self, client):
+        r = await client.post("/api/pet/chat", json={"message": "Hello!"})
+        assert r.status_code == 200
+
+    async def test_chat_response_has_response_field(self, client):
+        data = (await client.post("/api/pet/chat", json={"message": "How are you?"})).json()
+        assert "response" in data
+        assert isinstance(data["response"], str)
+        assert len(data["response"]) > 0
+
+    async def test_chat_noop_when_no_api_key(self, client):
+        """Without GEMINI_API_KEY, chat returns a helpful noop message."""
+        data = (await client.post("/api/pet/chat", json={"message": "Test"})).json()
+        # Should contain either a real response or a "not configured" message
+        assert "response" in data
+
+    async def test_chat_empty_message_rejected(self, client):
+        r = await client.post("/api/pet/chat", json={"message": ""})
+        assert r.status_code == 422
+
+    async def test_chat_whitespace_only_rejected(self, client):
+        r = await client.post("/api/pet/chat", json={"message": "   "})
+        assert r.status_code == 422

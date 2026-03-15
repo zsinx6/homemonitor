@@ -9,9 +9,10 @@ import aiosqlite
 from app.api.dependencies import get_db, get_pet_service, get_phrase_selector
 from app.api.models import PetBackupResponse, PetInteractResponse, PetResponse
 from app.domain import constants as C
-from app.domain.pet import derive_status, get_evolution, get_next_evolution_level
+from app.domain.pet import get_next_evolution_level
 from app.domain.phrases import PhraseContext
-from app.infrastructure.repositories import pet_repo, server_repo
+from app.infrastructure.repositories import pet_repo
+from app.services import context_service
 
 router = APIRouter()
 
@@ -27,11 +28,10 @@ def _decode_event(last_event: str | None) -> tuple[str | None, str | None]:
 
 
 async def _build_pet_response(db, phrase_selector) -> PetResponse:
-    pet = await pet_repo.get_pet(db)
-    servers = await server_repo.list_servers(db)
-    any_down = any(s.status == "DOWN" and not s.maintenance_mode for s in servers)
-    status = derive_status(pet, any_server_down=any_down)
-    species, stage = get_evolution(pet.level)
+    # Single aggregation call — provides context for LLM phrases
+    snapshot = await context_service.build_snapshot(db)
+    pet = snapshot._raw_pet
+
     next_evo_level = get_next_evolution_level(pet.level)
 
     # Compute server-authoritative backup cooldown remaining
@@ -44,8 +44,11 @@ async def _build_pet_response(db, phrase_selector) -> PetResponse:
     # Decode last_event — may carry an encoded server name as detail
     event_type, event_detail = _decode_event(pet.last_event)
 
+    # Context dict injected into every phrase selector call so LLM has full state
+    ctx = {"__context__": snapshot, "species": snapshot.pet_species}
+
     # Select context-aware phrase, prioritising event over status
-    ctx_map = {
+    status_ctx_map = {
         "happy": PhraseContext.HAPPY,
         "lonely": PhraseContext.LONELY,
         "sad": PhraseContext.SAD,
@@ -53,34 +56,33 @@ async def _build_pet_response(db, phrase_selector) -> PetResponse:
         "critical": PhraseContext.CRITICAL,
     }
     if event_type == "server_down":
-        server_name = event_detail or "unknown"
         phrase = await phrase_selector.select(
-            PhraseContext.SERVER_DOWN, {"server_name": server_name}
+            PhraseContext.SERVER_DOWN, {**ctx, "server_name": event_detail or "unknown"}
         )
     elif event_type == "level_up":
         phrase = await phrase_selector.select(
-            PhraseContext.LEVEL_UP, {"level": pet.level, "species": species}
+            PhraseContext.LEVEL_UP, {**ctx, "level": pet.level}
         )
     elif event_type == "digivolution":
-        new_species = event_detail or species
         phrase = await phrase_selector.select(
-            PhraseContext.DIGIVOLUTION, {"species": new_species}
+            PhraseContext.DIGIVOLUTION, {**ctx, "species": event_detail or snapshot.pet_species}
         )
     elif event_type == "recovery":
-        server_name = event_detail or "server"
         phrase = await phrase_selector.select(
-            PhraseContext.RECOVERY, {"server_name": server_name}
+            PhraseContext.RECOVERY, {**ctx, "server_name": event_detail or "server"}
         )
     elif event_type == "backup":
-        phrase = await phrase_selector.select(PhraseContext.BACKUP, {})
+        phrase = await phrase_selector.select(PhraseContext.BACKUP, ctx)
     elif event_type == "task_done":
-        phrase = await phrase_selector.select(PhraseContext.TASK_DONE, {})
+        phrase = await phrase_selector.select(PhraseContext.TASK_DONE, ctx)
     elif event_type == "death":
-        phrase = await phrase_selector.select(PhraseContext.DEATH, {})
+        phrase = await phrase_selector.select(PhraseContext.DEATH, ctx)
     elif event_type == "revival":
-        phrase = await phrase_selector.select(PhraseContext.REVIVAL, {})
+        phrase = await phrase_selector.select(PhraseContext.REVIVAL, ctx)
     else:
-        phrase = await phrase_selector.select(ctx_map.get(status, PhraseContext.HAPPY), {})
+        phrase = await phrase_selector.select(
+            status_ctx_map.get(snapshot.pet_status, PhraseContext.HAPPY), ctx
+        )
 
     # Deliver only the clean event type to the frontend (strip encoded detail)
     clean_event = event_type
@@ -96,10 +98,10 @@ async def _build_pet_response(db, phrase_selector) -> PetResponse:
         hp=pet.hp,
         hp_max=C.HP_MAX,
         is_dead=pet.is_dead,
-        status=status,
+        status=snapshot.pet_status,
         phrase=phrase,
-        evolution=species,
-        evolution_stage=stage,
+        evolution=snapshot.pet_species,
+        evolution_stage=snapshot.pet_stage,
         evolution_next_level=next_evo_level,
         last_event=clean_event,
         last_backup_date=pet.last_backup_date,
@@ -124,12 +126,14 @@ async def interact(
     phrase_selector=Depends(get_phrase_selector),
 ):
     pet, on_cooldown = await pet_service.interact(db)
+    snapshot = await context_service.build_snapshot(db)
+    ctx = {"__context__": snapshot, "species": snapshot.pet_species}
     if pet.is_dead:
-        phrase = await phrase_selector.select(PhraseContext.DEATH, {})
+        phrase = await phrase_selector.select(PhraseContext.DEATH, ctx)
     elif on_cooldown:
-        phrase = await phrase_selector.select(PhraseContext.INTERACT_COOLDOWN, {})
+        phrase = await phrase_selector.select(PhraseContext.INTERACT_COOLDOWN, ctx)
     else:
-        phrase = await phrase_selector.select(PhraseContext.INTERACT, {})
+        phrase = await phrase_selector.select(PhraseContext.INTERACT, ctx)
     return PetInteractResponse(exp=pet.exp, phrase=phrase, on_cooldown=on_cooldown)
 
 
@@ -140,12 +144,14 @@ async def backup(
     phrase_selector=Depends(get_phrase_selector),
 ):
     pet, on_cooldown = await pet_service.backup(db)
+    snapshot = await context_service.build_snapshot(db)
+    ctx = {"__context__": snapshot, "species": snapshot.pet_species}
     if pet.is_dead:
-        phrase = await phrase_selector.select(PhraseContext.DEATH, {})
+        phrase = await phrase_selector.select(PhraseContext.DEATH, ctx)
     elif on_cooldown:
-        phrase = await phrase_selector.select(PhraseContext.BACKUP_COOLDOWN, {})
+        phrase = await phrase_selector.select(PhraseContext.BACKUP_COOLDOWN, ctx)
     else:
-        phrase = await phrase_selector.select(PhraseContext.BACKUP, {})
+        phrase = await phrase_selector.select(PhraseContext.BACKUP, ctx)
     return PetBackupResponse(
         exp=pet.exp,
         hp=pet.hp,
