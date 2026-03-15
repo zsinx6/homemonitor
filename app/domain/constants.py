@@ -58,9 +58,9 @@ COMPLETED_TASKS_DISPLAY_CAP = 20
 #   3. Run pytest to verify nothing broke.
 # ---------------------------------------------------------------------------
 EVOLUTION_TIERS = [
-    {"min_level": 1,  "max_level": 1,    "species": "Pixit",    "stage": "fresh"},
-    {"min_level": 2,  "max_level": 4,    "species": "Nybbit",   "stage": "in-training"},
-    {"min_level": 5,  "max_level": 14,   "species": "Packamon", "stage": "rookie"},
-    {"min_level": 15, "max_level": 29,   "species": "Hostimon", "stage": "champion"},
-    {"min_level": 30, "max_level": 9999, "species": "Kernelmon","stage": "perfect"},
+    {"min_level": 1,  "max_level": 1,    "species": "Bitmon",    "stage": "fresh"},
+    {"min_level": 2,  "max_level": 4,    "species": "Nibblemon", "stage": "in-training"},
+    {"min_level": 5,  "max_level": 14,   "species": "Packamon",  "stage": "rookie"},
+    {"min_level": 15, "max_level": 29,   "species": "Hostimon",  "stage": "champion"},
+    {"min_level": 30, "max_level": 9999, "species": "Kernelmon", "stage": "perfect"},
 ]

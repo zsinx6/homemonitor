@@ -37,8 +37,12 @@ def _clamp(value: int, low: int, high: int) -> int:
 def _apply_exp_gain(pet: Pet, amount: int) -> Pet:
     """Add EXP, handle level-up with carry-over, return updated Pet.
 
-    On level-up the pet's name is updated to match the new species so the
-    stored name always reflects the current evolutionary stage.
+    Emits ``last_event = "level_up"`` on a regular level-up.
+    Emits ``last_event = "digivolution:<species>"`` when the level-up
+    crosses a tier boundary (species name changes), so the router can
+    display a special digivolution phrase.
+
+    On any level-up the pet's name is synced to the new species.
     """
     new_exp = max(C.EXP_MIN, pet.exp + amount)
     level = pet.level
@@ -48,14 +52,15 @@ def _apply_exp_gain(pet: Pet, amount: int) -> Pet:
 
     while new_exp >= max_exp:
         new_exp -= max_exp
+        old_species, _ = get_evolution(level)
         level += 1
         max_exp = round(max_exp * C.LEVEL_UP_SCALE)
-        last_event = "level_up"
-
-    # Keep name in sync with current species after any level change
-    if level != pet.level:
-        species, _ = get_evolution(level)
-        name = species
+        new_species, _ = get_evolution(level)
+        name = new_species
+        if new_species != old_species:
+            last_event = f"digivolution:{new_species}"
+        else:
+            last_event = "level_up"
 
     return replace(pet, exp=new_exp, level=level, max_exp=max_exp,
                    last_event=last_event, name=name)

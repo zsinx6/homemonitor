@@ -25,8 +25,8 @@ class TestPetRoutes:
 
     async def test_get_pet_evolution_field(self, client):
         data = (await client.get("/api/pet")).json()
-        # Fresh pet starts at level 1 — Pixit (fresh stage)
-        assert data["evolution"] == "Pixit"
+        # Fresh pet starts at level 1 — Bitmon (fresh stage)
+        assert data["evolution"] == "Bitmon"
         assert data["evolution_stage"] == "fresh"
         assert data["evolution_next_level"] == 2
 

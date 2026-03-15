@@ -189,10 +189,11 @@ class TestLevelUp:
         assert result.max_exp == expected_new_max
 
     def test_level_up_sets_last_event(self):
+        # Level 1→2 crosses Bitmon→Nibblemon tier boundary → digivolution event
         pet = _pet(level=1, exp=C.INITIAL_MAX_EXP - C.EXP_PER_HEALTHY_CYCLE,
                    max_exp=C.INITIAL_MAX_EXP)
         result = apply_monitor_cycle(pet, down_server_names=[], recovered_server_names=[])
-        assert result.last_event == "level_up"
+        assert result.last_event == "digivolution:Nibblemon"
 
     def test_level_up_result_carries_excess(self):
         pet = _pet(level=1, exp=C.INITIAL_MAX_EXP - 1, max_exp=C.INITIAL_MAX_EXP)
@@ -303,19 +304,19 @@ class TestApplyBackup:
 # ---------------------------------------------------------------------------
 
 class TestGetEvolution:
-    def test_level_1_is_pixit_fresh(self):
+    def test_level_1_is_bitmon_fresh(self):
         species, stage = get_evolution(1)
-        assert species == "Pixit"
+        assert species == "Bitmon"
         assert stage == "fresh"
 
-    def test_level_2_is_nybbit_in_training(self):
+    def test_level_2_is_nibblemon_in_training(self):
         species, stage = get_evolution(2)
-        assert species == "Nybbit"
+        assert species == "Nibblemon"
         assert stage == "in-training"
 
     def test_level_4_still_in_training(self):
         species, stage = get_evolution(4)
-        assert species == "Nybbit"
+        assert species == "Nibblemon"
 
     def test_level_5_is_packamon_rookie(self):
         species, stage = get_evolution(5)
@@ -356,8 +357,22 @@ class TestGetNextEvolutionLevel:
 
     def test_name_syncs_on_level_up(self):
         """Pet name should update to new species when a level-up changes the tier."""
-        # Level 1 (Pixit fresh) gaining enough EXP to reach level 2 (Nybbit in-training)
-        pet = _pet(level=1, exp=99, max_exp=100, name="Pixit")
+        # Level 1 (Bitmon fresh) gaining enough EXP to reach level 2 (Nibblemon in-training)
+        pet = _pet(level=1, exp=99, max_exp=100, name="Bitmon")
         result = apply_monitor_cycle(pet, [], [])
         assert result.level == 2
-        assert result.name == "Nybbit"
+        assert result.name == "Nibblemon"
+
+    def test_digivolution_event_on_tier_change(self):
+        """Crossing a tier boundary sets last_event to digivolution:<new_species>."""
+        pet = _pet(level=1, exp=99, max_exp=100, name="Bitmon")
+        result = apply_monitor_cycle(pet, [], [])
+        assert result.last_event == "digivolution:Nibblemon"
+
+    def test_level_up_event_within_same_tier(self):
+        """Levelling up within the same tier sets last_event to level_up."""
+        # Level 2 and 3 are both Nibblemon (in-training tier 2-4)
+        pet = _pet(level=2, exp=149, max_exp=150, name="Nibblemon")
+        result = apply_monitor_cycle(pet, [], [])
+        assert result.level == 3
+        assert result.last_event == "level_up"

@@ -471,9 +471,10 @@
 
   <div id="stats-panel">
     <div id="pet-name-level">
-      <span id="pet-species">PIXIT</span> &nbsp; LV.<span id="pet-level">1</span>
+      <span id="pet-species">BITMON</span> &nbsp; LV.<span id="pet-level">1</span>
       <span id="pet-stage" style="display:block;font-size:7px;letter-spacing:2px;color:var(--grey)">FRESH</span>
       <span id="pet-next-evo" style="display:block;font-size:6px;color:var(--grey);opacity:0.7">→ LV.2</span>
+      <span id="down-badge" style="display:none;font-size:7px;color:var(--red);letter-spacing:1px;margin-top:3px">⚠ 1 DOWN</span>
     </div>
 
     <div>
@@ -717,7 +718,7 @@ function renderPet(pet, lastEvent) {
   face.className = `status-${status}`;
 
   // Pet species / level / stage / next evolution hint
-  document.getElementById("pet-species").textContent = (pet.evolution || "Pixit").toUpperCase();
+  document.getElementById("pet-species").textContent = (pet.evolution || "Bitmon").toUpperCase();
   document.getElementById("pet-level").textContent = pet.level;
   document.getElementById("pet-stage").textContent = stage.toUpperCase();
   const nextEvoEl = document.getElementById("pet-next-evo");
@@ -769,6 +770,11 @@ function renderPet(pet, lastEvent) {
   // Event-based animations
   if (lastEvent === "server_down") triggerAnim(face, "anim-hit");
   else if (lastEvent === "level_up") triggerAnim(face, "anim-levelup");
+  else if (lastEvent === "digivolution") {
+    triggerAnim(face, "anim-levelup");
+    spawnFloat(face.getBoundingClientRect().left + 20, face.getBoundingClientRect().top - 10,
+               "✦ DIGIVOLUTION! ✦", "floating-exp");
+  }
   else if (lastEvent === "recovery") triggerAnim(face, "anim-recovery");
   else if (lastEvent === "backup" || lastEvent === "task_done") triggerAnim(face, "anim-backup");
 
@@ -805,6 +811,16 @@ function uptimeClass(pct) {
 }
 
 function renderServers(servers) {
+  // Update down-server badge in the sticky header
+  const downCount = servers.filter(s => s.status === "DOWN").length;
+  const badge = document.getElementById("down-badge");
+  if (downCount > 0) {
+    badge.textContent = `⚠ ${downCount} DOWN`;
+    badge.style.display = "block";
+  } else {
+    badge.style.display = "none";
+  }
+
   const list = document.getElementById("server-list");
   if (!servers.length) {
     list.innerHTML = '<div style="font-size:8px;color:var(--grey);text-align:center;padding:20px 0">No servers monitored yet. Add one below.</div>';
@@ -908,12 +924,14 @@ async function poll() {
    ACTIONS
 ===================================================================== */
 async function petInteract(event) {
-  // Optimistic heart animation
-  spawnFloat(event.clientX - 8, event.clientY - 20, "❤️", "floating-heart");
   try {
     const res = await api("POST", "/api/pet/interact");
     setSpeech(res.phrase);
-    if (res.on_cooldown) return;  // No EXP update — cooldown active
+    if (res.on_cooldown) {
+      spawnFloat(event.clientX - 8, event.clientY - 20, "⏰", "floating-heart");
+      return;
+    }
+    spawnFloat(event.clientX - 8, event.clientY - 20, "❤️", "floating-heart");
     // Optimistic EXP update
     if (state.pet) {
       state.pet.exp = res.exp;

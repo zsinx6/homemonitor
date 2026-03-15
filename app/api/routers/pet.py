@@ -53,6 +53,11 @@ async def _build_pet_response(db, phrase_selector) -> PetResponse:
         phrase = await phrase_selector.select(
             PhraseContext.LEVEL_UP, {"level": pet.level, "species": species}
         )
+    elif event_type == "digivolution":
+        new_species = event_detail or species
+        phrase = await phrase_selector.select(
+            PhraseContext.DIGIVOLUTION, {"species": new_species}
+        )
     elif event_type == "recovery":
         server_name = event_detail or "server"
         phrase = await phrase_selector.select(

@@ -55,10 +55,15 @@ _PHRASES: dict[PhraseContext, list[str]] = {
         "{server_name} is UP again! My health is improving.",
     ],
     PhraseContext.LEVEL_UP: [
-        "DIGIVOLUTION INITIATED. I am now LEVEL {level}!",
         "LEVEL {level} ACHIEVED. My power has increased dramatically.",
         "Ascending to LEVEL {level}! The network trembles.",
         "I have reached LEVEL {level}. Nothing can stop me now.",
+    ],
+    PhraseContext.DIGIVOLUTION: [
+        "DIGIVOLUTION COMPLETE! I am now {species}!",
+        "{species} ONLINE! My data has ascended to a new form!",
+        "I have evolved into {species}! The network trembles before me!",
+        "EVOLUTION SEQUENCE COMPLETE — {species} has entered the system!",
     ],
     PhraseContext.INTERACT: [
         "Processing affection... efficiency +2%.",
