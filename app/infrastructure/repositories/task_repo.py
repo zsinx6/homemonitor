@@ -84,3 +84,11 @@ async def complete_task(
     )
     await db.commit()
     return await get_task(db, task_id)
+
+
+async def delete_task(db: aiosqlite.Connection, task_id: int) -> bool:
+    """Delete a task by ID. Returns True if deleted, False if not found."""
+    async with db.execute("DELETE FROM tasks WHERE id = ?", (task_id,)) as cur:
+        deleted = cur.rowcount > 0
+    await db.commit()
+    return deleted

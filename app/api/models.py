@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -64,7 +64,8 @@ class ServerOut(BaseModel):
     daily_stats: list[DailyStatOut] = Field(default_factory=list)
 
 
-class ServerCreate(BaseModel):
+class _ServerBase(BaseModel):
+    """Shared fields and validators for server create/update."""
     name: str = Field(..., min_length=1, max_length=100)
     address: str = Field(..., min_length=1, max_length=500)
     port: Optional[int] = Field(None, ge=1, le=65535)
@@ -78,20 +79,21 @@ class ServerCreate(BaseModel):
             raise ValueError("must not be blank or whitespace-only")
         return v
 
+    @model_validator(mode="after")
+    def validate_ping_address(self):
+        if self.type == "ping" and "://" in self.address:
+            raise ValueError(
+                "Ping address must be a hostname or IP — remove the URL scheme (e.g. http://)"
+            )
+        return self
 
-class ServerUpdate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=100)
-    address: str = Field(..., min_length=1, max_length=500)
-    port: Optional[int] = Field(None, ge=1, le=65535)
-    type: str = Field(..., pattern="^(http|ping)$")
 
-    @field_validator("name", "address", mode="before")
-    @classmethod
-    def strip_and_require_non_blank(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("must not be blank or whitespace-only")
-        return v
+class ServerCreate(_ServerBase):
+    pass
+
+
+class ServerUpdate(_ServerBase):
+    pass
 
 
 # ---------------------------------------------------------------------------

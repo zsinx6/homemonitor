@@ -32,6 +32,8 @@ HP_SAD_THRESHOLD = 4            # hp >= this (but below happy threshold) OR any 
 
 # Interaction / loneliness
 LONELINESS_HOURS = 24           # hours without interaction before "lonely" state
+HP_DRAIN_LONELY = 1             # HP drained per cycle when pet has not been interacted with
+INTERACT_COOLDOWN_SECONDS = 30  # minimum seconds between interactions to prevent EXP farming
 
 # Backup overdue
 BACKUP_OVERDUE_DAYS = 30

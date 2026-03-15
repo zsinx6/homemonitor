@@ -108,6 +108,19 @@ class TestServerRoutes:
         assert r.status_code == 201
         assert r.json()["port"] is None
 
+    async def test_create_ping_server_with_url_rejected(self, client):
+        """Ping server addresses must not include a URL scheme."""
+        r = await client.post("/api/servers", json={
+            "name": "myhome", "address": "http://192.168.1.1", "type": "ping"
+        })
+        assert r.status_code == 422
+
+    async def test_create_ping_server_with_hostname_accepted(self, client):
+        r = await client.post("/api/servers", json={
+            "name": "myhome", "address": "192.168.1.1", "type": "ping"
+        })
+        assert r.status_code == 201
+
     async def test_create_server_initial_stats_zero(self, client):
         r = await client.post("/api/servers", json={
             "name": "srv", "address": "http://example.com", "type": "http"
@@ -175,7 +188,7 @@ class TestServerRoutes:
 
     async def test_delete_server(self, client):
         srv = (await client.post("/api/servers", json={
-            "name": "tmp", "address": "http://tmp", "port": None, "type": "ping"
+            "name": "tmp", "address": "192.168.1.1", "port": None, "type": "ping"
         })).json()
         r = await client.delete(f"/api/servers/{srv['id']}")
         assert r.status_code == 204
@@ -261,6 +274,27 @@ class TestTaskRoutes:
         ids = [t["id"] for t in tasks]
         assert t1["id"] in ids
         assert t2["id"] in ids
+
+    async def test_delete_task(self, client):
+        task = (await client.post("/api/tasks", json={"task": "Temp task"})).json()
+        r = await client.delete(f"/api/tasks/{task['id']}")
+        assert r.status_code == 204
+
+    async def test_delete_task_removes_from_list(self, client):
+        task = (await client.post("/api/tasks", json={"task": "Deletable task"})).json()
+        await client.delete(f"/api/tasks/{task['id']}")
+        tasks = (await client.get("/api/tasks")).json()
+        assert all(t["id"] != task["id"] for t in tasks)
+
+    async def test_delete_nonexistent_task_returns_404(self, client):
+        r = await client.delete("/api/tasks/9999")
+        assert r.status_code == 404
+
+    async def test_complete_task_fires_task_done_event(self, client):
+        task = (await client.post("/api/tasks", json={"task": "Write tests"})).json()
+        await client.put(f"/api/tasks/{task['id']}/complete")
+        data = (await client.get("/api/pet")).json()
+        assert data["last_event"] == "task_done"
 
 
 class TestStaticFiles:

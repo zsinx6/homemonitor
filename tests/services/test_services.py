@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from unittest.mock import AsyncMock
 
@@ -202,7 +202,7 @@ class TestMonitorService:
         assert pet_repo.pet.last_event is None
 
     async def test_new_down_transition_fires_server_down_event(self):
-        """A server transitioning UP→DOWN fires last_event = 'server_down'."""
+        """A server transitioning UP→DOWN fires last_event encoding the server name."""
         pet = _default_pet(hp=C.HP_MAX)
         # Server is currently UP in DB
         server = FakeServer(id=1, name="web", address="http://x", port=None,
@@ -211,7 +211,8 @@ class TestMonitorService:
         result = ServerCheckResult(server_id=1, name="web", is_up=False, error="timeout")
         service, pet_repo, _ = self._make_service([server], [result], initial_pet=pet)
         await service.run_cycle(db=None)
-        assert pet_repo.pet.last_event == "server_down"
+        assert pet_repo.pet.last_event is not None
+        assert pet_repo.pet.last_event.startswith("server_down:")
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +226,9 @@ class TestPetService:
         return service, pet_repo
 
     async def test_interact_gains_exp(self):
-        service, repo = self._make_service()
+        # Pet last interacted longer ago than the cooldown so EXP is granted
+        old = _now() - timedelta(seconds=C.INTERACT_COOLDOWN_SECONDS + 5)
+        service, repo = self._make_service(_default_pet(last_interaction_date=old))
         pet = await service.interact(db=None)
         assert pet.exp == C.EXP_INTERACT
 
@@ -245,6 +248,27 @@ class TestPetService:
         service, repo = self._make_service()
         pet = await service.backup(db=None)
         assert pet.last_backup_date is not None
+
+
+    async def test_interact_within_cooldown_does_not_grant_exp(self):
+        """Second interact within the cooldown window returns unchanged pet."""
+        recent = _now() - timedelta(seconds=C.INTERACT_COOLDOWN_SECONDS // 2)
+        service, repo = self._make_service(_default_pet(last_interaction_date=recent))
+        pet = await service.interact(db=None)
+        assert pet.exp == 0  # unchanged
+
+    async def test_interact_after_cooldown_grants_exp(self):
+        """Interact after the cooldown period grants EXP normally."""
+        old = _now() - timedelta(seconds=C.INTERACT_COOLDOWN_SECONDS + 5)
+        service, repo = self._make_service(_default_pet(last_interaction_date=old))
+        pet = await service.interact(db=None)
+        assert pet.exp == C.EXP_INTERACT
+
+    async def test_interact_with_none_interaction_date_grants_exp(self):
+        """Pet that has never been interacted with has no cooldown."""
+        service, repo = self._make_service(_default_pet(last_interaction_date=None))
+        pet = await service.interact(db=None)
+        assert pet.exp == C.EXP_INTERACT
 
 
 # ---------------------------------------------------------------------------
@@ -275,3 +299,9 @@ class TestTaskService:
         result = await service.complete_task(db=None, task_id=999)
         assert result is None
         assert pet_repo.pet.exp == 0  # no change
+
+    async def test_complete_task_sets_task_done_event(self):
+        task = FakeTask(id=1, task="Fix nginx")
+        service, pet_repo, _ = self._make_service(tasks=[task])
+        await service.complete_task(db=None, task_id=1)
+        assert pet_repo.pet.last_event == "task_done"

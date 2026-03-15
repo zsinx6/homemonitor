@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import httpx
+from urllib.parse import urlparse, urlunparse
 
 from app.domain import constants as C
 from app.domain.server import ServerCheckResult
@@ -18,14 +19,11 @@ class HttpChecker(ServerChecker):
     ) -> ServerCheckResult:
         url = address
         if port:
-            # Inject port if address doesn't already contain one
-            if "://" in url:
-                scheme, rest = url.split("://", 1)
-                host = rest.split("/")[0]
-                path = rest[len(host):]
-                url = f"{scheme}://{host}:{port}{path}"
-            else:
-                url = f"{url}:{port}"
+            parsed = urlparse(url)
+            # Only inject port when the URL doesn't already specify one
+            if not parsed.port:
+                netloc = f"{parsed.hostname}:{port}"
+                url = urlunparse(parsed._replace(netloc=netloc))
 
         try:
             async with httpx.AsyncClient(

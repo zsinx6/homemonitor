@@ -105,13 +105,20 @@ def apply_monitor_cycle(
     # HP changes from downed servers
     if any_down:
         new_hp = _clamp(updated.hp - C.HP_LOSS_PER_DOWN_CYCLE, C.HP_MIN, C.HP_MAX)
-        updated = replace(updated, hp=new_hp, last_event="server_down")
+        # Encode first downed server name so the router can use it for phrases
+        updated = replace(updated, hp=new_hp, last_event=f"server_down:{down_server_names[0]}")
 
     # HP recovery from servers that came back up
     if recovered_server_names:
         recovery_hp = len(recovered_server_names) * C.HP_GAIN_ON_RECOVERY
         new_hp = _clamp(updated.hp + recovery_hp, C.HP_MIN, C.HP_MAX)
-        updated = replace(updated, hp=new_hp, last_event="recovery")
+        # Encode first recovered server name so the router can use it for phrases
+        updated = replace(updated, hp=new_hp, last_event=f"recovery:{recovered_server_names[0]}")
+
+    # Passive HP drain when pet has not been interacted with recently
+    if not _has_interacted_recently(updated):
+        new_hp = _clamp(updated.hp - C.HP_DRAIN_LONELY, C.HP_MIN, C.HP_MAX)
+        updated = replace(updated, hp=new_hp)
 
     # Backup overdue passive drain
     if _is_backup_overdue(updated):
@@ -134,7 +141,8 @@ def apply_interact(pet: Pet) -> Pet:
 def apply_complete_task(pet: Pet) -> Pet:
     """Player completes a sysadmin task: gain EXP and restore HP."""
     new_hp = _clamp(pet.hp + C.HP_GAIN_COMPLETE_TASK, C.HP_MIN, C.HP_MAX)
-    updated = replace(pet, hp=new_hp)
+    # Set task_done event before EXP gain — level_up will override if it triggers
+    updated = replace(pet, hp=new_hp, last_event="task_done")
     return _apply_exp_gain(updated, C.EXP_COMPLETE_TASK)
 
 

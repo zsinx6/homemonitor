@@ -27,8 +27,10 @@ class MonitorService:
         """Run one full monitoring cycle: check all servers, update pet state."""
         servers = await self._server_repo.list_servers(db)
 
-        # Snapshot previous statuses for transition detection
-        previous_statuses = {s.name: s.status for s in servers}
+        # Build an ID-to-name map and snapshot previous statuses keyed by ID
+        # to avoid collisions from duplicate names and survive renames
+        id_to_name = {s.id: s.name for s in servers}
+        previous_statuses = {s.id: s.status for s in servers}
 
         # Run all checks in parallel
         tasks = [
@@ -37,10 +39,10 @@ class MonitorService:
         ]
         results: list[ServerCheckResult] = await asyncio.gather(*tasks)
 
-        # Persist check results and build current status snapshot
+        # Persist check results and build current status snapshot keyed by ID
         checked_at = datetime.now(timezone.utc)
         date_str = checked_at.strftime("%Y-%m-%d")
-        current_statuses: dict[str, str] = {}
+        current_statuses: dict[int, str] = {}
 
         for result in results:
             await self._server_repo.update_server_check_result(
@@ -49,29 +51,39 @@ class MonitorService:
             await self._server_repo.upsert_daily_stat(
                 db, result.server_id, date_str, result.is_up
             )
-            current_statuses[result.name] = "UP" if result.is_up else "DOWN"
+            current_statuses[result.server_id] = "UP" if result.is_up else "DOWN"
 
-        # Detect transitions
-        newly_down, newly_recovered = detect_state_transitions(
+        # Detect transitions — returns lists of server IDs
+        newly_down_ids, newly_recovered_ids = detect_state_transitions(
             previous_statuses, current_statuses
         )
+
+        # Map IDs back to names for domain/phrase use
+        newly_down_names = [id_to_name[i] for i in newly_down_ids if i in id_to_name]
+        newly_recovered_names = [id_to_name[i] for i in newly_recovered_ids if i in id_to_name]
 
         # Always pass ALL currently-down servers so HP drains every cycle they
         # remain down. Only fire the "server_down" event when a server NEWLY
         # transitions to DOWN (not on every repeat cycle).
-        all_currently_down = [
-            name for name, status in current_statuses.items() if status == "DOWN"
+        all_currently_down_names = [
+            id_to_name[sid]
+            for sid, status in current_statuses.items()
+            if status == "DOWN" and sid in id_to_name
         ]
 
         # Update pet state
         pet = await self._pet_repo.get_pet(db)
         updated_pet = apply_monitor_cycle(
             pet,
-            down_server_names=all_currently_down,
-            recovered_server_names=newly_recovered,
+            down_server_names=all_currently_down_names,
+            recovered_server_names=newly_recovered_names,
         )
-        # Suppress repeated server_down events when no new failure occurred
-        if not newly_down and updated_pet.last_event == "server_down":
+        # Suppress server_down event when no new failure occurred this cycle
+        if (
+            not newly_down_names
+            and updated_pet.last_event is not None
+            and updated_pet.last_event.startswith("server_down:")
+        ):
             updated_pet = replace(updated_pet, last_event=None)
         await self._pet_repo.save_pet(db, updated_pet)
 

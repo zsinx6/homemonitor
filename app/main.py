@@ -18,27 +18,27 @@ logger = logging.getLogger(__name__)
 DB_PATH = "digimon.db"
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup: init DB and start background worker
-    async with aiosqlite.connect(DB_PATH) as db:
-        await init_db(db)
-
-    task = asyncio.create_task(monitor_loop(DB_PATH))
-    app.state.monitor_task = task
-    logger.info("DigiMon(itor) started.")
-    yield
-    # Shutdown: cancel worker gracefully
-    task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
-    logger.info("DigiMon(itor) stopped.")
-
-
 def create_app(db_path: str = DB_PATH) -> FastAPI:
     """Factory so tests can inject a custom DB path."""
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        # Startup: init DB and start background worker using the captured db_path
+        async with aiosqlite.connect(db_path) as db:
+            await init_db(db)
+
+        task = asyncio.create_task(monitor_loop(db_path))
+        app.state.monitor_task = task
+        logger.info("DigiMon(itor) started.")
+        yield
+        # Shutdown: cancel worker gracefully
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        logger.info("DigiMon(itor) stopped.")
+
     app = FastAPI(title="DigiMon(itor)", lifespan=lifespan)
     app.state.db_path = db_path
 

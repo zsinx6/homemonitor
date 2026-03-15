@@ -242,7 +242,7 @@
       background: var(--surface);
       border-bottom: 3px solid var(--border);
       position: sticky;
-      top: 180px;
+      top: 0; /* overridden by JS on load/resize */
       z-index: 99;
     }
 
@@ -709,7 +709,7 @@ function renderPet(pet, lastEvent) {
   if (lastEvent === "server_down") triggerAnim(face, "anim-hit");
   else if (lastEvent === "level_up") triggerAnim(face, "anim-levelup");
   else if (lastEvent === "recovery") triggerAnim(face, "anim-recovery");
-  else if (lastEvent === "backup")   triggerAnim(face, "anim-backup");
+  else if (lastEvent === "backup" || lastEvent === "task_done") triggerAnim(face, "anim-backup");
 
   // Backup counter in maintenance tab
   const days = pet.last_backup_date
@@ -818,22 +818,19 @@ ${completed.map(t => `
    POLL
 ===================================================================== */
 async function poll() {
-  try {
-    const [pet, servers, tasks] = await Promise.all([
-      api("GET", "/api/pet"),
-      api("GET", "/api/servers"),
-      api("GET", "/api/tasks"),
-    ]);
+  // Fetch each resource independently so a single failure doesn't block all updates
+  const petResult     = await api("GET", "/api/pet").catch(() => null);
+  const serversResult = await api("GET", "/api/servers").catch(() => null);
+  const tasksResult   = await api("GET", "/api/tasks").catch(() => null);
+
+  if (petResult) {
     showError(false);
-    const lastEvent = pet.last_event;
-    state.pet = pet;
-    state.servers = servers;
-    renderPet(pet, lastEvent);
-    renderServers(servers);
-    renderTasks(tasks);
-  } catch (_) {
-    // error already shown by api()
+    state.pet = petResult;
+    renderPet(petResult, petResult.last_event);
   }
+  if (serversResult) renderServers(serversResult);
+  if (tasksResult)   renderTasks(tasksResult);
+  if (!petResult && !serversResult && !tasksResult) showError(true);
 }
 
 /* =====================================================================
@@ -940,7 +937,15 @@ function escHtml(s) {
 /* =====================================================================
    BOOT
 ===================================================================== */
+function updateTabNavTop() {
+  const header = document.getElementById("pet-header");
+  const tabNav = document.querySelector(".tab-nav");
+  if (header && tabNav) tabNav.style.top = header.offsetHeight + "px";
+}
+
 document.getElementById("digimon-face").addEventListener("click", petInteract);
+updateTabNavTop();
+window.addEventListener("resize", updateTabNavTop);
 poll();
 setInterval(poll, 30000);
 </script>

@@ -15,13 +15,26 @@ from app.infrastructure.repositories import pet_repo, server_repo
 router = APIRouter()
 
 
+def _decode_event(last_event: str | None) -> tuple[str | None, str | None]:
+    """Split 'event_type:detail' → (type, detail). Returns (None, None) if no event."""
+    if not last_event:
+        return None, None
+    if ":" in last_event:
+        event_type, detail = last_event.split(":", 1)
+        return event_type, detail
+    return last_event, None
+
+
 async def _build_pet_response(db, phrase_selector) -> PetResponse:
     pet = await pet_repo.get_pet(db)
     servers = await server_repo.list_servers(db)
     any_down = any(s.status == "DOWN" for s in servers)
     status = derive_status(pet, any_server_down=any_down)
 
-    # Select context-aware phrase
+    # Decode last_event — may carry an encoded server name as detail
+    event_type, event_detail = _decode_event(pet.last_event)
+
+    # Select context-aware phrase, prioritising event over status
     ctx_map = {
         "happy": PhraseContext.HAPPY,
         "lonely": PhraseContext.LONELY,
@@ -29,29 +42,30 @@ async def _build_pet_response(db, phrase_selector) -> PetResponse:
         "injured": PhraseContext.INJURED,
         "critical": PhraseContext.CRITICAL,
     }
-    # Prioritise event-based phrase over status phrase
-    if pet.last_event == "server_down":
-        down_names = [s.name for s in servers if s.status == "DOWN"]
-        server_name = down_names[0] if down_names else "unknown"
+    if event_type == "server_down":
+        server_name = event_detail or "unknown"
         phrase = await phrase_selector.select(
             PhraseContext.SERVER_DOWN, {"server_name": server_name}
         )
-    elif pet.last_event == "level_up":
+    elif event_type == "level_up":
         phrase = await phrase_selector.select(
             PhraseContext.LEVEL_UP, {"level": pet.level}
         )
-    elif pet.last_event == "recovery":
+    elif event_type == "recovery":
+        server_name = event_detail or "server"
         phrase = await phrase_selector.select(
-            PhraseContext.RECOVERY, {"server_name": "server"}
+            PhraseContext.RECOVERY, {"server_name": server_name}
         )
-    elif pet.last_event == "backup":
+    elif event_type == "backup":
         phrase = await phrase_selector.select(PhraseContext.BACKUP, {})
+    elif event_type == "task_done":
+        phrase = await phrase_selector.select(PhraseContext.TASK_DONE, {})
     else:
         phrase = await phrase_selector.select(ctx_map.get(status, PhraseContext.HAPPY), {})
 
-    last_event = pet.last_event
-    # Clear last_event after delivering it (one-shot)
-    if last_event:
+    # Deliver only the clean event type to the frontend (strip encoded detail)
+    clean_event = event_type
+    if clean_event:
         await pet_repo.clear_last_event(db)
 
     return PetResponse(
@@ -64,7 +78,7 @@ async def _build_pet_response(db, phrase_selector) -> PetResponse:
         hp_max=C.HP_MAX,
         status=status,
         phrase=phrase,
-        last_event=last_event,
+        last_event=clean_event,
         last_backup_date=pet.last_backup_date,
         last_updated=pet.last_updated,
     )

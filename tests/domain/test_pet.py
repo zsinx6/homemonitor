@@ -114,12 +114,12 @@ class TestApplyMonitorCycle:
     def test_recovery_sets_last_event(self):
         pet = _pet(hp=5)
         result = apply_monitor_cycle(pet, down_server_names=[], recovered_server_names=["x"])
-        assert result.last_event == "recovery"
+        assert result.last_event == "recovery:x"
 
     def test_server_down_sets_last_event(self):
         pet = _pet(hp=C.HP_MAX)
         result = apply_monitor_cycle(pet, down_server_names=["db"], recovered_server_names=[])
-        assert result.last_event == "server_down"
+        assert result.last_event == "server_down:db"
 
     def test_exp_does_not_go_below_minimum(self):
         pet = _pet(exp=0)
@@ -138,6 +138,25 @@ class TestApplyMonitorCycle:
         pet = _pet(hp=C.HP_MAX, last_backup_date=recent)
         result = apply_monitor_cycle(pet, down_server_names=[], recovered_server_names=[])
         assert result.hp == C.HP_MAX
+
+    def test_passive_lonely_drain_when_not_interacted(self):
+        """HP drains each cycle when pet has not been interacted with recently."""
+        old = _now() - timedelta(hours=C.LONELINESS_HOURS + 1)
+        pet = _pet(hp=C.HP_MAX, last_interaction_date=old)
+        result = apply_monitor_cycle(pet, down_server_names=[], recovered_server_names=[])
+        assert result.hp == C.HP_MAX - C.HP_DRAIN_LONELY
+
+    def test_no_passive_drain_when_recently_interacted(self):
+        """HP is not drained when interacted with recently."""
+        pet = _pet(hp=C.HP_MAX, last_interaction_date=_now())
+        result = apply_monitor_cycle(pet, down_server_names=[], recovered_server_names=[])
+        assert result.hp == C.HP_MAX
+
+    def test_passive_drain_when_interaction_date_is_none(self):
+        """Pet that has never been interacted with also loses HP per cycle."""
+        pet = _pet(hp=C.HP_MAX, last_interaction_date=None)
+        result = apply_monitor_cycle(pet, down_server_names=[], recovered_server_names=[])
+        assert result.hp == C.HP_MAX - C.HP_DRAIN_LONELY
 
 
 # ---------------------------------------------------------------------------
@@ -229,6 +248,11 @@ class TestApplyCompleteTask:
         pet = _pet(hp=C.HP_MAX)
         result = apply_complete_task(pet)
         assert result.hp == C.HP_MAX
+
+    def test_sets_task_done_event(self):
+        pet = _pet(exp=0)
+        result = apply_complete_task(pet)
+        assert result.last_event == "task_done"
 
 
 # ---------------------------------------------------------------------------
