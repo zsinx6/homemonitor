@@ -51,7 +51,11 @@ class MockPetRepo:
         self.saved.append(pet)
 
     async def clear_last_event(self, db):
-        self.pet = self.pet.__class__(**{**self.pet.__dict__, "last_event": None})
+        self.pet = replace(self.pet, last_event=None)
+
+    async def rename_pet(self, db, name: str):
+        self.pet = replace(self.pet, name=name)
+        return self.pet
 
 
 @dataclass
@@ -606,3 +610,138 @@ class TestMonitorServiceMemoryRecording:
         svc, _ = self._make_service([server], [result], memory_repo=None)
         # Should not raise
         await svc.run_cycle(db=None)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PetService dead-pet guard tests
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestPetServiceDeadGuards:
+    def _dead_pet(self):
+        return replace(_default_pet(hp=0), is_dead=True)
+
+    async def test_interact_when_dead_returns_on_cooldown(self):
+        """Dead pet cannot be interacted with — returns on_cooldown=True."""
+        svc = PetService(pet_repo=MockPetRepo(pet=self._dead_pet()))
+        pet, on_cooldown = await svc.interact(db=None)
+        assert on_cooldown is True
+        assert pet.exp == 0  # unchanged
+
+    async def test_interact_when_dead_does_not_save(self):
+        """Dead pet interact must not save any state change."""
+        repo = MockPetRepo(pet=self._dead_pet())
+        svc = PetService(pet_repo=repo)
+        await svc.interact(db=None)
+        assert len(repo.saved) == 0
+
+    async def test_backup_when_dead_returns_on_cooldown(self):
+        """Dead pet backup is blocked — returns on_cooldown=True."""
+        svc = PetService(pet_repo=MockPetRepo(pet=self._dead_pet()))
+        pet, on_cooldown = await svc.backup(db=None)
+        assert on_cooldown is True
+
+    async def test_backup_when_dead_does_not_save(self):
+        """Dead pet backup must not save any state change."""
+        repo = MockPetRepo(pet=self._dead_pet())
+        svc = PetService(pet_repo=repo)
+        await svc.backup(db=None)
+        assert len(repo.saved) == 0
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PetService rename + clear_last_event tests
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestPetServiceRename:
+    async def test_rename_updates_name(self):
+        repo = MockPetRepo(pet=_default_pet())
+        # MockPetRepo.rename_pet must be wired
+        repo.rename_pet = AsyncMock(return_value=replace(_default_pet(), name="Zippymon"))
+        svc = PetService(pet_repo=repo)
+        pet = await svc.rename(db=None, name="Zippymon")
+        assert pet.name == "Zippymon"
+
+    async def test_rename_records_rename_memory(self):
+        mem = MockMemoryRepo()
+        repo = MockPetRepo(pet=_default_pet())
+        repo.rename_pet = AsyncMock(return_value=replace(_default_pet(), name="Zippymon"))
+        svc = PetService(pet_repo=repo, memory_repo=mem)
+        await svc.rename(db=None, name="Zippymon")
+        types = [c["event_type"] for c in mem.calls]
+        assert "rename" in types
+
+    async def test_clear_last_event_delegates_to_repo(self):
+        repo = MockPetRepo(pet=replace(_default_pet(), last_event="level_up"))
+        svc = PetService(pet_repo=repo)
+        await svc.clear_last_event(db=None)
+        assert repo.pet.last_event is None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TaskService edge case: already-completed task
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestTaskServiceEdgeCases:
+    def _make_service(self, tasks=None):
+        pet_repo = MockPetRepo(pet=_default_pet())
+        task_repo = MockTaskRepo(tasks=tasks or [])
+        return TaskService(pet_repo=pet_repo, task_repo=task_repo), pet_repo, task_repo
+
+    async def test_complete_already_completed_task_returns_none(self):
+        """complete_task on an already-completed task returns None; pet unchanged."""
+        task = FakeTask(id=1, task="done already", is_completed=True)
+        # MockTaskRepo.complete_task returns None for already-completed tasks
+        # because the underlying repo only returns the task if it finds it in `tasks`
+        # We simulate: repo returns None (task not found or already done)
+        task_repo = MockTaskRepo(tasks=[])  # not in pending list → returns None
+        pet_repo = MockPetRepo(pet=_default_pet())
+        svc = TaskService(pet_repo=pet_repo, task_repo=task_repo)
+        result = await svc.complete_task(db=AsyncMock(), task_id=1)
+        assert result is None
+        assert pet_repo.pet.exp == 0  # no EXP granted
+
+    async def test_complete_task_records_task_complete_memory(self):
+        mem = MockMemoryRepo()
+        task = FakeTask(id=1, task="Add monitoring")
+        pet_repo = MockPetRepo(pet=_default_pet())
+        task_repo = MockTaskRepo(tasks=[task])
+        svc = TaskService(pet_repo=pet_repo, task_repo=task_repo, memory_repo=mem)
+        await svc.complete_task(db=AsyncMock(), task_id=1)
+        types = [c["event_type"] for c in mem.calls]
+        assert "task_complete" in types
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MonitorService: checker raises exception
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestMonitorServiceCheckerException:
+    def _make_service_with_failing_checker(self, servers):
+        pet_repo = MockPetRepo(pet=_default_pet())
+        server_repo = MockServerRepo(servers=servers)
+
+        async def failing_check(server_id, name, address, port):
+            raise RuntimeError("network unreachable")
+
+        from unittest.mock import MagicMock
+        http_checker = MagicMock()
+        http_checker.check = failing_check
+        ping_checker = MagicMock()
+        ping_checker.check = failing_check
+
+        svc = MonitorService(
+            pet_repo=pet_repo,
+            server_repo=server_repo,
+            http_checker=http_checker,
+            ping_checker=ping_checker,
+        )
+        return svc, pet_repo
+
+    async def test_checker_exception_treated_as_down(self):
+        """If the checker raises, the server should be treated as DOWN (HP drains)."""
+        server = FakeServer(id=1, name="flaky", address="http://x", port=None,
+                            type="http", status="UP")
+        svc, pet_repo = self._make_service_with_failing_checker([server])
+        await svc.run_cycle(db=None)
+        # Server treated as DOWN → HP should decrease
+        assert pet_repo.pet.hp < C.HP_MAX

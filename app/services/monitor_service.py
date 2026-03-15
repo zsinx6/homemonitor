@@ -2,15 +2,18 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Optional
 
 from app.domain.memory import MemoryType
-from app.domain.pet import apply_monitor_cycle
+from app.domain.pet import apply_monitor_cycle, parse_last_event
 from app.domain.server import ServerCheckResult, detect_state_transitions
 from app.infrastructure.checkers.base import ServerChecker
 from app.infrastructure.notifier import NtfyNotifier
+
+logger = logging.getLogger(__name__)
 
 
 class MonitorService:
@@ -33,6 +36,10 @@ class MonitorService:
         self._notifier = notifier
         self._notify_on_recovery = notify_on_recovery
         self._notify_on_death = notify_on_death
+
+    async def _record(self, db, event_type: str, detail=None) -> None:
+        if self._memory_repo:
+            await self._memory_repo.add_memory(db, event_type, detail)
 
     async def run_cycle(self, db) -> None:
         """Run one full monitoring cycle: check all servers, update pet state."""
@@ -98,19 +105,14 @@ class MonitorService:
         # Record memories for significant events this cycle
         if self._memory_repo:
             for name in newly_down_names:
-                await self._memory_repo.add_memory(db, MemoryType.SERVER_DOWN, name)
+                await self._record(db, MemoryType.SERVER_DOWN, name)
             for name in newly_recovered_names:
-                await self._memory_repo.add_memory(db, MemoryType.SERVER_RECOVERY, name)
-            # Death this cycle (pet was alive, now dead)
+                await self._record(db, MemoryType.SERVER_RECOVERY, name)
             if updated_pet.is_dead and not pet.is_dead:
-                await self._memory_repo.add_memory(db, MemoryType.DEATH)
-            # Level-up or digivolution from EXP gain this cycle
-            if updated_pet.last_event:
-                if updated_pet.last_event.startswith("digivolution:"):
-                    species = updated_pet.last_event.split(":", 1)[1]
-                    await self._memory_repo.add_memory(db, MemoryType.DIGIVOLUTION, species)
-                elif updated_pet.last_event == "level_up":
-                    await self._memory_repo.add_memory(db, MemoryType.LEVEL_UP, str(updated_pet.level))
+                await self._record(db, MemoryType.DEATH)
+            event_type, detail = parse_last_event(updated_pet)
+            if event_type:
+                await self._record(db, event_type, detail)
 
         # Push notifications (fire-and-forget, never block)
         if self._notifier:
@@ -146,4 +148,8 @@ class MonitorService:
         server_type: str,
     ) -> ServerCheckResult:
         checker = self._http_checker if server_type == "http" else self._ping_checker
-        return await checker.check(server_id, name, address, port)
+        try:
+            return await checker.check(server_id, name, address, port)
+        except Exception as exc:
+            logger.warning("Checker raised for server %r (%s): %s", name, server_id, exc)
+            return ServerCheckResult(server_id=server_id, name=name, is_up=False, error=str(exc))

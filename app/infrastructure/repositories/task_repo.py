@@ -8,6 +8,7 @@ from typing import Optional
 import aiosqlite
 
 from app.domain import constants as C
+from app.infrastructure.repositories.common import parse_datetime
 
 _PRIORITY_ORDER = {"high": 0, "normal": 1, "low": 2}
 
@@ -23,18 +24,13 @@ class TaskRow:
 
 
 def _row_to_task(row: aiosqlite.Row) -> TaskRow:
-    def _parse_dt(val: Optional[str]) -> Optional[datetime]:
-        if val is None:
-            return None
-        return datetime.fromisoformat(val).replace(tzinfo=timezone.utc)
-
     keys = row.keys() if hasattr(row, "keys") else {}
     return TaskRow(
         id=row["id"],
         task=row["task"],
         is_completed=bool(row["is_completed"]),
-        created_at=_parse_dt(row["created_at"]),
-        completed_at=_parse_dt(row["completed_at"]),
+        created_at=parse_datetime(row["created_at"]),
+        completed_at=parse_datetime(row["completed_at"]),
         priority=row["priority"] if "priority" in keys else "normal",
     )
 

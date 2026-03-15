@@ -6,7 +6,7 @@ from typing import Optional
 
 from app.domain import constants as C
 from app.domain.memory import MemoryType
-from app.domain.pet import apply_backup, apply_interact, apply_revive, Pet
+from app.domain.pet import apply_backup, apply_interact, apply_revive, parse_last_event, Pet
 
 
 class PetService:
@@ -32,12 +32,9 @@ class PetService:
                 return pet, True
         updated = apply_interact(pet)
         await self._pet_repo.save_pet(db, updated)
-        # Record level-up or digivolution if it occurred
-        if updated.last_event:
-            if updated.last_event.startswith("digivolution:"):
-                await self._record(db, MemoryType.DIGIVOLUTION, updated.last_event.split(":", 1)[1])
-            elif updated.last_event == "level_up":
-                await self._record(db, MemoryType.LEVEL_UP, str(updated.level))
+        event_type, detail = parse_last_event(updated)
+        if event_type:
+            await self._record(db, event_type, detail)
         return updated, False
 
     async def backup(self, db) -> tuple[Pet, bool]:
@@ -55,12 +52,9 @@ class PetService:
         updated = apply_backup(pet)
         await self._pet_repo.save_pet(db, updated)
         await self._record(db, MemoryType.BACKUP)
-        # Also capture level-up if EXP gain from backup caused it
-        if updated.last_event:
-            if updated.last_event.startswith("digivolution:"):
-                await self._record(db, MemoryType.DIGIVOLUTION, updated.last_event.split(":", 1)[1])
-            elif updated.last_event == "level_up":
-                await self._record(db, MemoryType.LEVEL_UP, str(updated.level))
+        event_type, detail = parse_last_event(updated)
+        if event_type:
+            await self._record(db, event_type, detail)
         return updated, False
 
     async def revive(self, db) -> Pet:
@@ -72,3 +66,13 @@ class PetService:
         await self._pet_repo.save_pet(db, updated)
         await self._record(db, MemoryType.REVIVAL)
         return updated
+
+    async def rename(self, db, name: str) -> Pet:
+        """Set a custom display name and record it in memories."""
+        pet = await self._pet_repo.rename_pet(db, name)
+        await self._record(db, MemoryType.RENAME, name)
+        return pet
+
+    async def clear_last_event(self, db) -> None:
+        """One-shot delivery: clear last_event after it has been consumed."""
+        await self._pet_repo.clear_last_event(db)

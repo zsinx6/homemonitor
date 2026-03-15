@@ -4,7 +4,11 @@ All schema changes live here. Run ``await init_db(db)`` once at startup.
 """
 from __future__ import annotations
 
+import logging
+
 import aiosqlite
+
+logger = logging.getLogger(__name__)
 
 _SCHEMA_SQL = """
 PRAGMA journal_mode = WAL;
@@ -80,17 +84,12 @@ VALUES (1, 'Bitmon', 1, 0, 100, 10, datetime('now', '-1 hour'), datetime('now'))
 """
 
 
-async def apply_initial_name_async(db: aiosqlite.Connection) -> None:
+async def apply_initial_name_async(db: aiosqlite.Connection, initial_name: str | None) -> None:
     """Apply the configured initial_name to the pet if it still has the default name.
 
     Called once at startup after init_db(). Safe to call on every restart —
     only renames if the current name is the default 'Bitmon' seed value.
     """
-    try:
-        from app.infrastructure.config import get_config  # noqa: PLC0415
-        initial_name = get_config().personality.initial_name
-    except Exception:
-        return
     if not initial_name:
         return
     await db.execute(
@@ -110,7 +109,7 @@ async def init_db(db: aiosqlite.Connection) -> None:
         )
         await db.commit()
     except aiosqlite.OperationalError:
-        pass  # column already exists
+        logger.debug("Migration skip: is_dead column already exists")
     await db.execute(_SEED_PET_SQL)
     await db.commit()
     # Migration: add maintenance_mode column to existing databases
@@ -120,7 +119,7 @@ async def init_db(db: aiosqlite.Connection) -> None:
         )
         await db.commit()
     except aiosqlite.OperationalError:
-        pass  # column already exists
+        logger.debug("Migration skip: maintenance_mode column already exists")
     # Migration: add position column for server ordering
     try:
         await db.execute(
@@ -133,7 +132,7 @@ async def init_db(db: aiosqlite.Connection) -> None:
         )
         await db.commit()
     except aiosqlite.OperationalError:
-        pass  # column already exists
+        logger.debug("Migration skip: position column already exists")
     # Migration: add priority column to tasks
     try:
         await db.execute(
@@ -141,4 +140,4 @@ async def init_db(db: aiosqlite.Connection) -> None:
         )
         await db.commit()
     except aiosqlite.OperationalError:
-        pass  # column already exists
+        logger.debug("Migration skip: priority column already exists")

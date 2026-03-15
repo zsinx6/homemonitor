@@ -852,46 +852,89 @@ class TestExportImport:
         assert weird is not None
         assert weird["type"] == "http"
 
+    async def test_export_empty_database(self, client):
+        """Export with no servers/tasks still returns a valid structure."""
+        data = (await client.get("/api/export")).json()
+        assert data["servers"] == []
+        assert data["tasks"] == []
+        assert "version" in data
 
 
-class TestInitialPetName:
+class TestServerValidation:
+    """Additional server input validation edge cases."""
+
+    async def test_update_server_invalid_type_rejected(self, client):
+        """PUT /servers/{id} with invalid type returns 422."""
+        created = (await client.post("/api/servers", json={
+            "name": "srv", "address": "http://srv", "type": "http"
+        })).json()
+        r = await client.put(f"/api/servers/{created['id']}", json={
+            "name": "srv", "address": "http://srv", "type": "ftp"
+        })
+        assert r.status_code == 422
+
+    async def test_update_server_blank_name_rejected(self, client):
+        """PUT /servers/{id} with whitespace-only name returns 422."""
+        created = (await client.post("/api/servers", json={
+            "name": "ok", "address": "http://ok", "type": "http"
+        })).json()
+        r = await client.put(f"/api/servers/{created['id']}", json={
+            "name": "   ", "address": "http://ok", "type": "http"
+        })
+        assert r.status_code == 422
+
+    async def test_update_server_blank_address_rejected(self, client):
+        """PUT /servers/{id} with whitespace-only address returns 422."""
+        created = (await client.post("/api/servers", json={
+            "name": "ok2", "address": "http://ok2", "type": "http"
+        })).json()
+        r = await client.put(f"/api/servers/{created['id']}", json={
+            "name": "ok2", "address": "   ", "type": "http"
+        })
+        assert r.status_code == 422
+
+
+class TestTaskValidation:
+    """Additional task input validation edge cases."""
+
+    async def test_create_task_exceeding_500_chars_rejected(self, client):
+        """Task body over 500 characters should be rejected with 422."""
+        r = await client.post("/api/tasks", json={"task": "x" * 501})
+        assert r.status_code == 422
+
+    async def test_create_task_exactly_500_chars_accepted(self, client):
+        """Task body of exactly 500 characters is the boundary — must be accepted."""
+        r = await client.post("/api/tasks", json={"task": "x" * 500})
+        assert r.status_code == 201
+
+
+
     """apply_initial_name_async sets the pet name from config on first start."""
 
-    async def test_initial_name_applied_when_default(self, tmp_path):
-        """If config has initial_name and pet is still 'Bitmon', name is updated."""
+    async def test_initial_name_applied_when_default(self):
+        """If initial_name is provided and pet is still 'Bitmon', name is updated."""
         import aiosqlite
-        from app.infrastructure.config import load_config
         from app.infrastructure.database import init_db, apply_initial_name_async
-
-        toml = tmp_path / "cfg.toml"
-        toml.write_text('[personality]\ninitial_name = "Sparky"\n', encoding="utf-8")
-        load_config(toml)
 
         async with aiosqlite.connect(":memory:") as db:
             db.row_factory = aiosqlite.Row
             await init_db(db)
-            await apply_initial_name_async(db)
+            await apply_initial_name_async(db, "Sparky")
             async with db.execute("SELECT name FROM pet_state WHERE id=1") as cur:
                 row = await cur.fetchone()
             assert row["name"] == "Sparky"
 
-    async def test_initial_name_not_overwrite_custom_name(self, tmp_path):
+    async def test_initial_name_not_overwrite_custom_name(self):
         """If user already renamed the pet, initial_name is a no-op."""
         import aiosqlite
-        from app.infrastructure.config import load_config
         from app.infrastructure.database import init_db, apply_initial_name_async
-
-        toml = tmp_path / "cfg2.toml"
-        toml.write_text('[personality]\ninitial_name = "Ghost"\n', encoding="utf-8")
-        load_config(toml)
 
         async with aiosqlite.connect(":memory:") as db:
             db.row_factory = aiosqlite.Row
             await init_db(db)
-            # Simulate user rename
             await db.execute("UPDATE pet_state SET name='Kraken' WHERE id=1")
             await db.commit()
-            await apply_initial_name_async(db)
+            await apply_initial_name_async(db, "Ghost")
             async with db.execute("SELECT name FROM pet_state WHERE id=1") as cur:
                 row = await cur.fetchone()
             assert row["name"] == "Kraken"  # user rename preserved

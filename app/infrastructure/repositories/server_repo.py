@@ -7,6 +7,8 @@ from typing import Optional
 
 import aiosqlite
 
+from app.infrastructure.repositories.common import parse_datetime
+
 
 @dataclass
 class ServerRow:
@@ -34,11 +36,6 @@ class DailyStatRow:
 
 
 def _row_to_server(row: aiosqlite.Row) -> ServerRow:
-    def _parse_dt(val: Optional[str]) -> Optional[datetime]:
-        if val is None:
-            return None
-        return datetime.fromisoformat(val).replace(tzinfo=timezone.utc)
-
     return ServerRow(
         id=row["id"],
         name=row["name"],
@@ -50,7 +47,7 @@ def _row_to_server(row: aiosqlite.Row) -> ServerRow:
         total_checks=row["total_checks"],
         successful_checks=row["successful_checks"],
         last_error=row["last_error"],
-        last_checked=_parse_dt(row["last_checked"]),
+        last_checked=parse_datetime(row["last_checked"]),
         maintenance_mode=bool(row["maintenance_mode"]),
         position=row["position"] if "position" in row.keys() else 0,
     )

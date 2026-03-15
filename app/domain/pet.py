@@ -213,3 +213,18 @@ def get_next_evolution_level(level: int) -> int | None:
                 return C.EVOLUTION_TIERS[i + 1]["min_level"]
             return None  # already at highest tier
     return None
+
+
+def parse_last_event(pet: Pet) -> tuple[str | None, str | None]:
+    """Extract a recordable memory event from pet.last_event.
+
+    Returns (event_type, detail) where event_type matches MemoryType string
+    constants, or (None, None) if last_event holds no memory-worthy event.
+    """
+    if not pet.last_event:
+        return None, None
+    if pet.last_event.startswith("digivolution:"):
+        return "digivolution", pet.last_event.split(":", 1)[1]
+    if pet.last_event == "level_up":
+        return "level_up", str(pet.level)
+    return None, None

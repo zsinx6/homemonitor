@@ -1,7 +1,7 @@
 """Tasks API routes."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException
 
 import aiosqlite
 
@@ -59,4 +59,3 @@ async def delete_task(
     deleted = await task_repo.delete_task(db, task_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Task not found")
-    return Response(status_code=204)

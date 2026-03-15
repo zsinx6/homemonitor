@@ -7,14 +7,10 @@ from typing import Optional
 import aiosqlite
 
 from app.domain.pet import Pet
+from app.infrastructure.repositories.common import parse_datetime
 
 
 def _row_to_pet(row: aiosqlite.Row) -> Pet:
-    def _parse_dt(val: Optional[str]) -> Optional[datetime]:
-        if val is None:
-            return None
-        return datetime.fromisoformat(val).replace(tzinfo=timezone.utc)
-
     return Pet(
         id=row["id"],
         name=row["name"],
@@ -23,10 +19,10 @@ def _row_to_pet(row: aiosqlite.Row) -> Pet:
         max_exp=row["max_exp"],
         hp=row["hp"],
         is_dead=bool(row["is_dead"]),
-        last_backup_date=_parse_dt(row["last_backup_date"]),
-        last_interaction_date=_parse_dt(row["last_interaction_date"]),
+        last_backup_date=parse_datetime(row["last_backup_date"]),
+        last_interaction_date=parse_datetime(row["last_interaction_date"]),
         last_event=row["last_event"],
-        last_updated=_parse_dt(row["last_updated"]) or datetime.now(timezone.utc),
+        last_updated=parse_datetime(row["last_updated"]) or datetime.now(timezone.utc),
     )
 
 

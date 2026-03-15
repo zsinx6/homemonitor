@@ -11,11 +11,10 @@ import aiosqlite
 from app.api.dependencies import get_db, get_pet_service, get_phrase_selector
 from app.api.models import PetBackupResponse, PetInteractResponse, PetRenameRequest, PetResponse
 from app.domain import constants as C
-from app.domain.memory import MemoryType
 from app.domain.pet import get_next_evolution_level
 from app.domain.phrases import PhraseContext
-from app.infrastructure.repositories import memory_repo, pet_repo
 from app.services import context_service
+from app.services.pet_service import PetService
 
 router = APIRouter()
 
@@ -30,7 +29,7 @@ def _decode_event(last_event: str | None) -> tuple[str | None, str | None]:
     return last_event, None
 
 
-async def _build_pet_response(db, phrase_selector) -> PetResponse:
+async def _build_pet_response(db, phrase_selector, pet_service: PetService) -> PetResponse:
     # Single aggregation call — provides context for LLM phrases
     snapshot = await context_service.build_snapshot(db)
     pet = snapshot._raw_pet
@@ -90,7 +89,7 @@ async def _build_pet_response(db, phrase_selector) -> PetResponse:
     # Deliver only the clean event type to the frontend (strip encoded detail)
     clean_event = event_type
     if clean_event:
-        await pet_repo.clear_last_event(db)
+        await pet_service.clear_last_event(db)
 
     return PetResponse(
         id=pet.id,
@@ -119,14 +118,15 @@ async def _build_pet_response(db, phrase_selector) -> PetResponse:
 async def get_pet_state(
     db: aiosqlite.Connection = Depends(get_db),
     phrase_selector=Depends(get_phrase_selector),
+    pet_service: PetService = Depends(get_pet_service),
 ):
-    return await _build_pet_response(db, phrase_selector)
+    return await _build_pet_response(db, phrase_selector, pet_service)
 
 
 @router.post("/pet/interact", response_model=PetInteractResponse)
 async def interact(
     db: aiosqlite.Connection = Depends(get_db),
-    pet_service=Depends(get_pet_service),
+    pet_service: PetService = Depends(get_pet_service),
     phrase_selector=Depends(get_phrase_selector),
 ):
     pet, on_cooldown = await pet_service.interact(db)
@@ -144,7 +144,7 @@ async def interact(
 @router.post("/pet/backup", response_model=PetBackupResponse)
 async def backup(
     db: aiosqlite.Connection = Depends(get_db),
-    pet_service=Depends(get_pet_service),
+    pet_service: PetService = Depends(get_pet_service),
     phrase_selector=Depends(get_phrase_selector),
 ):
     pet, on_cooldown = await pet_service.backup(db)
@@ -168,21 +168,21 @@ async def backup(
 @router.post("/pet/revive", response_model=PetResponse)
 async def revive(
     db: aiosqlite.Connection = Depends(get_db),
-    pet_service=Depends(get_pet_service),
+    pet_service: PetService = Depends(get_pet_service),
     phrase_selector=Depends(get_phrase_selector),
 ):
     """Revive the dead pet. Resets HP to HP_REVIVE and clears EXP. No-op if alive."""
     await pet_service.revive(db)
-    return await _build_pet_response(db, phrase_selector)
+    return await _build_pet_response(db, phrase_selector, pet_service)
 
 
 @router.patch("/pet/rename", response_model=PetResponse)
 async def rename_pet(
     body: PetRenameRequest,
     db: aiosqlite.Connection = Depends(get_db),
+    pet_service: PetService = Depends(get_pet_service),
     phrase_selector=Depends(get_phrase_selector),
 ):
     """Set a custom display name for the pet (resets on next evolution)."""
-    await pet_repo.rename_pet(db, body.name)
-    await memory_repo.add_memory(db, MemoryType.RENAME, body.name)
-    return await _build_pet_response(db, phrase_selector)
+    await pet_service.rename(db, body.name)
+    return await _build_pet_response(db, phrase_selector, pet_service)

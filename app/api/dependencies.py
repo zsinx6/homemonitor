@@ -11,6 +11,7 @@ from fastapi import Request
 from app.domain.phrases import PhraseSelector
 from app.domain.static_phrase_service import StaticPhraseService
 from app.infrastructure.adapters import MemoryRepoAdapter, PetRepoAdapter, ServerRepoAdapter, TaskRepoAdapter
+from app.infrastructure.config import get_config
 from app.services.monitor_service import MonitorService
 from app.services.pet_service import PetService
 from app.services.task_service import TaskService
@@ -36,7 +37,8 @@ def get_phrase_selector() -> PhraseSelector:
         if api_key:
             try:
                 from app.services.llm_service import GeminiPhraseService  # noqa: PLC0415
-                _phrase_selector = GeminiPhraseService(api_key)
+                personality = get_config().personality.to_prompt()
+                _phrase_selector = GeminiPhraseService(api_key, personality_prompt=personality)
                 logger.info("Gemini phrase service enabled (gemini-1.5-flash).")
             except Exception as exc:
                 logger.warning("Could not init GeminiPhraseService (%s); using static.", exc)
@@ -53,7 +55,8 @@ def get_llm_chat_service():
         if api_key:
             try:
                 from app.services.llm_service import LLMChatService  # noqa: PLC0415
-                _llm_chat_service = LLMChatService(api_key)
+                personality = get_config().personality.to_prompt()
+                _llm_chat_service = LLMChatService(api_key, personality_prompt=personality)
                 logger.info("Gemini chat service enabled.")
             except Exception as exc:
                 logger.warning("Could not init LLMChatService (%s); chat disabled.", exc)

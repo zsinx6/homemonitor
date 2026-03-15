@@ -18,7 +18,6 @@ from typing import Any
 
 from app.domain.phrases import PhraseContext, PhraseSelector
 from app.domain.static_phrase_service import StaticPhraseService
-from app.infrastructure.config import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +88,7 @@ _CHAT_SYSTEM = (
 class GeminiPhraseService(PhraseSelector):
     """LLM-powered phrase selector. Falls back to static on any error."""
 
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str, personality_prompt: str = "") -> None:
         import google.generativeai as genai  # noqa: PLC0415
 
         genai.configure(api_key=api_key)
@@ -101,6 +100,7 @@ class GeminiPhraseService(PhraseSelector):
             },
         )
         self._fallback = StaticPhraseService()
+        self._personality = personality_prompt
 
     async def select(self, context: PhraseContext, variables: dict[str, Any]) -> str:
         if context not in _LLM_CONTEXTS:
@@ -122,7 +122,7 @@ class GeminiPhraseService(PhraseSelector):
         except (KeyError, ValueError):
             situation = situation_tpl
 
-        personality = get_config().personality.to_prompt()
+        personality = self._personality
         prompt = _PHRASE_SYSTEM.format(
             species=variables.get("species", snapshot.pet_species if snapshot else "Digimon"),
             personality=personality,
@@ -145,7 +145,7 @@ class GeminiPhraseService(PhraseSelector):
 class LLMChatService:
     """Handles free-form chat with the Digimon via Gemini."""
 
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str, personality_prompt: str = "") -> None:
         import google.generativeai as genai  # noqa: PLC0415
 
         genai.configure(api_key=api_key)
@@ -156,11 +156,12 @@ class LLMChatService:
                 "max_output_tokens": 250,
             },
         )
+        self._personality = personality_prompt
 
     async def chat(self, message: str, snapshot) -> str:
         species = snapshot.pet_species if snapshot else "Digimon"
         ctx_text = snapshot.to_prompt_text() if snapshot else "No context available."
-        personality = get_config().personality.to_prompt()
+        personality = self._personality
 
         prompt = _CHAT_SYSTEM.format(
             species=species,
