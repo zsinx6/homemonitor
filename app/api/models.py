@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ---------------------------------------------------------------------------
@@ -70,12 +70,28 @@ class ServerCreate(BaseModel):
     port: Optional[int] = Field(None, ge=1, le=65535)
     type: str = Field(..., pattern="^(http|ping)$")
 
+    @field_validator("name", "address", mode="before")
+    @classmethod
+    def strip_and_require_non_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("must not be blank or whitespace-only")
+        return v
+
 
 class ServerUpdate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     address: str = Field(..., min_length=1, max_length=500)
     port: Optional[int] = Field(None, ge=1, le=65535)
     type: str = Field(..., pattern="^(http|ping)$")
+
+    @field_validator("name", "address", mode="before")
+    @classmethod
+    def strip_and_require_non_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("must not be blank or whitespace-only")
+        return v
 
 
 # ---------------------------------------------------------------------------
@@ -92,3 +108,11 @@ class TaskOut(BaseModel):
 
 class TaskCreate(BaseModel):
     task: str = Field(..., min_length=1, max_length=500)
+
+    @field_validator("task", mode="before")
+    @classmethod
+    def strip_and_require_non_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("must not be blank or whitespace-only")
+        return v

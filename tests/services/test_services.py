@@ -171,6 +171,48 @@ class TestMonitorService:
         await service.run_cycle(db=None)
         assert pet_repo.pet.hp >= 5 + C.HP_GAIN_ON_RECOVERY
 
+    async def test_persistent_down_server_drains_hp_every_cycle(self):
+        """A server that stays DOWN should drain HP on every cycle."""
+        pet = _default_pet(hp=C.HP_MAX)
+        server = FakeServer(id=1, name="db", address="http://x", port=None,
+                            type="http", status="DOWN")
+        result = ServerCheckResult(server_id=1, name="db", is_up=False, error="timeout")
+        service, pet_repo, _ = self._make_service([server], [result], initial_pet=pet)
+
+        await service.run_cycle(db=None)
+        hp_after_first = pet_repo.pet.hp
+        assert hp_after_first == C.HP_MAX - C.HP_LOSS_PER_DOWN_CYCLE
+
+        await service.run_cycle(db=None)
+        hp_after_second = pet_repo.pet.hp
+        assert hp_after_second == C.HP_MAX - 2 * C.HP_LOSS_PER_DOWN_CYCLE
+
+    async def test_persistent_down_does_not_repeat_server_down_event(self):
+        """server_down event fires once on transition; NOT on subsequent down cycles."""
+        pet = _default_pet(hp=C.HP_MAX)
+        server = FakeServer(id=1, name="api", address="http://x", port=None,
+                            type="http", status="DOWN")
+        result = ServerCheckResult(server_id=1, name="api", is_up=False, error="timeout")
+        service, pet_repo, _ = self._make_service([server], [result], initial_pet=pet)
+
+        # First cycle: server was UP (FakeServer default status is "DOWN" here,
+        # but previous_statuses is built from the live list before checks).
+        # Server was DOWN in DB already → no transition → event should be None.
+        await service.run_cycle(db=None)
+        assert pet_repo.pet.last_event is None
+
+    async def test_new_down_transition_fires_server_down_event(self):
+        """A server transitioning UP→DOWN fires last_event = 'server_down'."""
+        pet = _default_pet(hp=C.HP_MAX)
+        # Server is currently UP in DB
+        server = FakeServer(id=1, name="web", address="http://x", port=None,
+                            type="http", status="UP")
+        # But the check returns DOWN (new failure)
+        result = ServerCheckResult(server_id=1, name="web", is_up=False, error="timeout")
+        service, pet_repo, _ = self._make_service([server], [result], initial_pet=pet)
+        await service.run_cycle(db=None)
+        assert pet_repo.pet.last_event == "server_down"
+
 
 # ---------------------------------------------------------------------------
 # PetService tests

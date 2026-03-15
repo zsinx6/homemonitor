@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from datetime import datetime, timezone
 
 from app.domain.pet import apply_monitor_cycle
@@ -55,15 +56,23 @@ class MonitorService:
             previous_statuses, current_statuses
         )
 
+        # Always pass ALL currently-down servers so HP drains every cycle they
+        # remain down. Only fire the "server_down" event when a server NEWLY
+        # transitions to DOWN (not on every repeat cycle).
+        all_currently_down = [
+            name for name, status in current_statuses.items() if status == "DOWN"
+        ]
+
         # Update pet state
         pet = await self._pet_repo.get_pet(db)
         updated_pet = apply_monitor_cycle(
             pet,
-            down_server_names=newly_down if newly_down else [
-                name for name, status in current_statuses.items() if status == "DOWN"
-            ],
+            down_server_names=all_currently_down,
             recovered_server_names=newly_recovered,
         )
+        # Suppress repeated server_down events when no new failure occurred
+        if not newly_down and updated_pet.last_event == "server_down":
+            updated_pet = replace(updated_pet, last_event=None)
         await self._pet_repo.save_pet(db, updated_pet)
 
     async def _check_server(

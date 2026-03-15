@@ -20,6 +20,11 @@ class TestPetRoutes:
         assert "phrase" in data
         assert "hp_max" in data
 
+    async def test_get_pet_last_event_field_present(self, client):
+        data = (await client.get("/api/pet")).json()
+        assert "last_event" in data
+        assert data["last_event"] is None  # no events yet
+
     async def test_interact_increases_exp(self, client):
         initial = (await client.get("/api/pet")).json()["exp"]
         await client.post("/api/pet/interact")
@@ -33,14 +38,36 @@ class TestPetRoutes:
         assert "phrase" in data
         assert len(data["phrase"]) > 0
 
+    async def test_interact_changes_status_from_lonely_to_happy(self, client):
+        # Fresh pet has never been interacted with → lonely
+        before = (await client.get("/api/pet")).json()["status"]
+        assert before == "lonely"
+        await client.post("/api/pet/interact")
+        after = (await client.get("/api/pet")).json()["status"]
+        assert after == "happy"
+
     async def test_backup_increases_exp_and_hp(self, client):
-        # Drain HP first so we can see recovery
+        # Drain HP first so we can verify HP recovery
         initial = (await client.get("/api/pet")).json()
         r = await client.post("/api/pet/backup")
         assert r.status_code == 200
         data = r.json()
         assert data["exp"] == initial["exp"] + C.EXP_BACKUP
         assert data["last_backup_date"] is not None
+
+    async def test_backup_actually_increases_hp(self, client):
+        # Pet starts at HP_MAX; backup can't increase it.
+        # Confirm response hp == min(current + HP_GAIN_BACKUP, HP_MAX).
+        pet_before = (await client.get("/api/pet")).json()
+        r = await client.post("/api/pet/backup")
+        expected_hp = min(pet_before["hp"] + C.HP_GAIN_BACKUP, C.HP_MAX)
+        assert r.json()["hp"] == expected_hp
+
+    async def test_backup_sets_last_event(self, client):
+        await client.post("/api/pet/backup")
+        data = (await client.get("/api/pet")).json()
+        # backup event fires on the first read after backup
+        assert data["last_event"] == "backup"
 
     async def test_last_event_is_cleared_after_read(self, client):
         # Call interact to set a change, then read twice
@@ -49,6 +76,12 @@ class TestPetRoutes:
         second = (await client.get("/api/pet")).json()
         # last_event should be None on second read
         assert second["last_event"] is None
+
+    async def test_interact_does_not_set_last_event(self, client):
+        # interact does not produce a last_event (no level-up at this exp)
+        await client.post("/api/pet/interact")
+        data = (await client.get("/api/pet")).json()
+        assert data["last_event"] is None
 
 
 class TestServerRoutes:
@@ -68,9 +101,39 @@ class TestServerRoutes:
         assert "id" in data
         assert "daily_stats" in data
 
+    async def test_create_server_without_port(self, client):
+        r = await client.post("/api/servers", json={
+            "name": "myserver", "address": "192.168.1.1", "type": "ping"
+        })
+        assert r.status_code == 201
+        assert r.json()["port"] is None
+
+    async def test_create_server_initial_stats_zero(self, client):
+        r = await client.post("/api/servers", json={
+            "name": "srv", "address": "http://example.com", "type": "http"
+        })
+        data = r.json()
+        assert data["total_checks"] == 0
+        assert data["successful_checks"] == 0
+        assert data["uptime_percent"] == 100.0
+        assert data["daily_stats"] == []
+        assert data["last_checked"] is None
+
     async def test_create_server_invalid_type(self, client):
         r = await client.post("/api/servers", json={
             "name": "x", "address": "1.2.3.4", "port": None, "type": "ftp"
+        })
+        assert r.status_code == 422
+
+    async def test_create_server_blank_name_rejected(self, client):
+        r = await client.post("/api/servers", json={
+            "name": "   ", "address": "http://example.com", "type": "http"
+        })
+        assert r.status_code == 422
+
+    async def test_create_server_blank_address_rejected(self, client):
+        r = await client.post("/api/servers", json={
+            "name": "good-name", "address": "   ", "type": "http"
         })
         assert r.status_code == 422
 
@@ -84,6 +147,26 @@ class TestServerRoutes:
         assert r.status_code == 200
         assert r.json()["name"] == "new"
 
+    async def test_update_server_all_fields(self, client):
+        created = (await client.post("/api/servers", json={
+            "name": "orig", "address": "http://orig", "port": 80, "type": "http"
+        })).json()
+        r = await client.put(f"/api/servers/{created['id']}", json={
+            "name": "changed", "address": "192.168.0.1", "port": None, "type": "ping"
+        })
+        data = r.json()
+        assert data["name"] == "changed"
+        assert data["address"] == "192.168.0.1"
+        assert data["port"] is None
+        assert data["type"] == "ping"
+
+    async def test_patch_server_not_allowed(self, client):
+        created = (await client.post("/api/servers", json={
+            "name": "s", "address": "http://s", "type": "http"
+        })).json()
+        r = await client.patch(f"/api/servers/{created['id']}", json={"name": "x"})
+        assert r.status_code == 405
+
     async def test_update_nonexistent_server_returns_404(self, client):
         r = await client.put("/api/servers/9999", json={
             "name": "x", "address": "http://x", "port": None, "type": "http"
@@ -96,6 +179,14 @@ class TestServerRoutes:
         })).json()
         r = await client.delete(f"/api/servers/{srv['id']}")
         assert r.status_code == 204
+
+    async def test_delete_server_removes_from_list(self, client):
+        srv = (await client.post("/api/servers", json={
+            "name": "gone", "address": "http://gone", "type": "http"
+        })).json()
+        await client.delete(f"/api/servers/{srv['id']}")
+        ids = [s["id"] for s in (await client.get("/api/servers")).json()]
+        assert srv["id"] not in ids
 
     async def test_delete_nonexistent_returns_404(self, client):
         r = await client.delete("/api/servers/9999")
@@ -115,6 +206,11 @@ class TestTaskRoutes:
         assert data["task"] == "Fix nginx backup"
         assert data["is_completed"] is False
 
+    async def test_create_task_appears_in_list(self, client):
+        await client.post("/api/tasks", json={"task": "New task"})
+        tasks = (await client.get("/api/tasks")).json()
+        assert any(t["task"] == "New task" for t in tasks)
+
     async def test_complete_task_grants_exp(self, client):
         task = (await client.post("/api/tasks", json={"task": "Deploy update"})).json()
         initial_exp = (await client.get("/api/pet")).json()["exp"]
@@ -124,11 +220,26 @@ class TestTaskRoutes:
         new_exp = (await client.get("/api/pet")).json()["exp"]
         assert new_exp == initial_exp + C.EXP_COMPLETE_TASK
 
+    async def test_complete_task_grants_hp(self, client):
+        task = (await client.post("/api/tasks", json={"task": "Patch certs"})).json()
+        hp_before = (await client.get("/api/pet")).json()["hp"]
+        await client.put(f"/api/tasks/{task['id']}/complete")
+        hp_after = (await client.get("/api/pet")).json()["hp"]
+        expected = min(hp_before + C.HP_GAIN_COMPLETE_TASK, C.HP_MAX)
+        assert hp_after == expected
+
     async def test_complete_task_marks_done(self, client):
         task = (await client.post("/api/tasks", json={"task": "Update certs"})).json()
         completed = (await client.put(f"/api/tasks/{task['id']}/complete")).json()
         assert completed["is_completed"] is True
         assert completed["completed_at"] is not None
+
+    async def test_complete_task_appears_in_list_as_done(self, client):
+        task = (await client.post("/api/tasks", json={"task": "Archive logs"})).json()
+        await client.put(f"/api/tasks/{task['id']}/complete")
+        tasks = (await client.get("/api/tasks")).json()
+        match = next(t for t in tasks if t["id"] == task["id"])
+        assert match["is_completed"] is True
 
     async def test_complete_nonexistent_task_returns_404(self, client):
         r = await client.put("/api/tasks/9999/complete")
@@ -137,3 +248,27 @@ class TestTaskRoutes:
     async def test_create_task_empty_string_rejected(self, client):
         r = await client.post("/api/tasks", json={"task": ""})
         assert r.status_code == 422
+
+    async def test_create_task_whitespace_only_rejected(self, client):
+        r = await client.post("/api/tasks", json={"task": "   "})
+        assert r.status_code == 422
+
+    async def test_list_tasks_shows_both_pending_and_completed(self, client):
+        t1 = (await client.post("/api/tasks", json={"task": "Pending task"})).json()
+        t2 = (await client.post("/api/tasks", json={"task": "Done task"})).json()
+        await client.put(f"/api/tasks/{t2['id']}/complete")
+        tasks = (await client.get("/api/tasks")).json()
+        ids = [t["id"] for t in tasks]
+        assert t1["id"] in ids
+        assert t2["id"] in ids
+
+
+class TestStaticFiles:
+    async def test_spa_served_at_root(self, client):
+        r = await client.get("/")
+        assert r.status_code == 200
+        assert "text/html" in r.headers["content-type"]
+
+    async def test_spa_contains_digimon_content(self, client):
+        r = await client.get("/")
+        assert "DigiMon" in r.text
