@@ -229,24 +229,32 @@ class TestPetService:
         # Pet last interacted longer ago than the cooldown so EXP is granted
         old = _now() - timedelta(seconds=C.INTERACT_COOLDOWN_SECONDS + 5)
         service, repo = self._make_service(_default_pet(last_interaction_date=old))
-        pet = await service.interact(db=None)
+        pet, on_cooldown = await service.interact(db=None)
         assert pet.exp == C.EXP_INTERACT
+        assert on_cooldown is False
+
+    async def test_interact_heals_hp(self):
+        old = _now() - timedelta(seconds=C.INTERACT_COOLDOWN_SECONDS + 5)
+        service, repo = self._make_service(_default_pet(hp=5, last_interaction_date=old))
+        pet, _ = await service.interact(db=None)
+        assert pet.hp == min(5 + C.HP_GAIN_INTERACT, C.HP_MAX)
 
     async def test_interact_updates_interaction_date(self):
         old = _now().__class__.min.replace(tzinfo=timezone.utc)
         service, repo = self._make_service(_default_pet(last_interaction_date=old))
-        pet = await service.interact(db=None)
+        pet, _ = await service.interact(db=None)
         assert pet.last_interaction_date > old
 
     async def test_backup_gains_exp_and_hp(self):
         service, repo = self._make_service(_default_pet(hp=5))
-        pet = await service.backup(db=None)
+        pet, on_cooldown = await service.backup(db=None)
         assert pet.exp == C.EXP_BACKUP
         assert pet.hp == min(5 + C.HP_GAIN_BACKUP, C.HP_MAX)
+        assert on_cooldown is False
 
     async def test_backup_sets_backup_date(self):
         service, repo = self._make_service()
-        pet = await service.backup(db=None)
+        pet, _ = await service.backup(db=None)
         assert pet.last_backup_date is not None
 
 
@@ -254,21 +262,40 @@ class TestPetService:
         """Second interact within the cooldown window returns unchanged pet."""
         recent = _now() - timedelta(seconds=C.INTERACT_COOLDOWN_SECONDS // 2)
         service, repo = self._make_service(_default_pet(last_interaction_date=recent))
-        pet = await service.interact(db=None)
+        pet, on_cooldown = await service.interact(db=None)
         assert pet.exp == 0  # unchanged
+        assert on_cooldown is True
 
     async def test_interact_after_cooldown_grants_exp(self):
         """Interact after the cooldown period grants EXP normally."""
         old = _now() - timedelta(seconds=C.INTERACT_COOLDOWN_SECONDS + 5)
         service, repo = self._make_service(_default_pet(last_interaction_date=old))
-        pet = await service.interact(db=None)
+        pet, on_cooldown = await service.interact(db=None)
         assert pet.exp == C.EXP_INTERACT
+        assert on_cooldown is False
 
     async def test_interact_with_none_interaction_date_grants_exp(self):
         """Pet that has never been interacted with has no cooldown."""
         service, repo = self._make_service(_default_pet(last_interaction_date=None))
-        pet = await service.interact(db=None)
+        pet, on_cooldown = await service.interact(db=None)
         assert pet.exp == C.EXP_INTERACT
+        assert on_cooldown is False
+
+    async def test_backup_on_cooldown_if_recently_backed_up(self):
+        """Backup within BACKUP_COOLDOWN_HOURS returns on_cooldown=True."""
+        recent_backup = _now() - timedelta(minutes=5)
+        service, repo = self._make_service(_default_pet(last_backup_date=recent_backup))
+        pet, on_cooldown = await service.backup(db=None)
+        assert on_cooldown is True
+        assert pet.exp == 0  # unchanged
+
+    async def test_backup_not_on_cooldown_after_cooldown_expires(self):
+        """Backup after BACKUP_COOLDOWN_HOURS returns on_cooldown=False."""
+        old_backup = _now() - timedelta(hours=C.BACKUP_COOLDOWN_HOURS + 1)
+        service, repo = self._make_service(_default_pet(last_backup_date=old_backup))
+        pet, on_cooldown = await service.backup(db=None)
+        assert on_cooldown is False
+        assert pet.exp == C.EXP_BACKUP
 
 
 # ---------------------------------------------------------------------------

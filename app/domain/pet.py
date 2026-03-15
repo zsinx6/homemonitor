@@ -26,14 +26,6 @@ class Pet:
     last_updated: datetime
 
 
-@dataclass(frozen=True)
-class LevelUpResult:
-    """Returned when a level-up occurs during an EXP gain."""
-    new_level: int
-    carried_exp: int
-    new_max_exp: int
-
-
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -133,8 +125,9 @@ def apply_monitor_cycle(
 
 
 def apply_interact(pet: Pet) -> Pet:
-    """Player pets the Digimon: gain EXP, update interaction timestamp."""
-    updated = replace(pet, last_interaction_date=_now())
+    """Player pets the Digimon: gain EXP and HP, update interaction timestamp."""
+    new_hp = _clamp(pet.hp + C.HP_GAIN_INTERACT, C.HP_MIN, C.HP_MAX)
+    updated = replace(pet, last_interaction_date=_now(), hp=new_hp)
     return _apply_exp_gain(updated, C.EXP_INTERACT)
 
 
@@ -151,3 +144,15 @@ def apply_backup(pet: Pet) -> Pet:
     new_hp = _clamp(pet.hp + C.HP_GAIN_BACKUP, C.HP_MIN, C.HP_MAX)
     updated = replace(pet, hp=new_hp, last_backup_date=_now(), last_event="backup")
     return _apply_exp_gain(updated, C.EXP_BACKUP)
+
+
+def get_evolution(level: int) -> tuple[str, str]:
+    """Return (species_name, stage_name) for the given level.
+
+    Uses EVOLUTION_TIERS from constants; falls back to the highest tier.
+    """
+    for min_l, max_l, species, stage in C.EVOLUTION_TIERS:
+        if min_l <= level <= max_l:
+            return species, stage
+    last = C.EVOLUTION_TIERS[-1]
+    return last[2], last[3]

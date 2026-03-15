@@ -67,11 +67,23 @@ _PHRASES: dict[PhraseContext, list[str]] = {
         "Human contact detected. Morale increased.",
         "I like it when you do that.",
     ],
+    PhraseContext.INTERACT_COOLDOWN: [
+        "Still processing last interaction. Please wait.",
+        "Too soon! Affection buffer not yet cleared.",
+        "Cooldown active. I appreciate the enthusiasm though.",
+        "I need a moment. Try again shortly.",
+    ],
     PhraseContext.BACKUP: [
         "Backup complete. I feel immortal.",
         "Data secured. My existence is protected once more.",
         "Backup successful! Massive EXP absorbed.",
         "All data backed up. I can face anything now.",
+    ],
+    PhraseContext.BACKUP_COOLDOWN: [
+        "Backup already logged recently. No reward yet.",
+        "I remember that backup. Too soon to claim again.",
+        "Backup cooldown active. Run a real backup first.",
+        "Already rewarded for that backup. Try again later.",
     ],
     PhraseContext.TASK_DONE: [
         "Task absorbed. EXP transferred.",

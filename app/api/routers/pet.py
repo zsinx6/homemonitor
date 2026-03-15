@@ -8,7 +8,7 @@ import aiosqlite
 from app.api.dependencies import get_db, get_pet_service, get_phrase_selector
 from app.api.models import PetBackupResponse, PetInteractResponse, PetResponse
 from app.domain import constants as C
-from app.domain.pet import derive_status
+from app.domain.pet import derive_status, get_evolution
 from app.domain.phrases import PhraseContext
 from app.infrastructure.repositories import pet_repo, server_repo
 
@@ -30,6 +30,7 @@ async def _build_pet_response(db, phrase_selector) -> PetResponse:
     servers = await server_repo.list_servers(db)
     any_down = any(s.status == "DOWN" for s in servers)
     status = derive_status(pet, any_server_down=any_down)
+    species, stage = get_evolution(pet.level)
 
     # Decode last_event — may carry an encoded server name as detail
     event_type, event_detail = _decode_event(pet.last_event)
@@ -49,7 +50,7 @@ async def _build_pet_response(db, phrase_selector) -> PetResponse:
         )
     elif event_type == "level_up":
         phrase = await phrase_selector.select(
-            PhraseContext.LEVEL_UP, {"level": pet.level}
+            PhraseContext.LEVEL_UP, {"level": pet.level, "species": species}
         )
     elif event_type == "recovery":
         server_name = event_detail or "server"
@@ -78,6 +79,8 @@ async def _build_pet_response(db, phrase_selector) -> PetResponse:
         hp_max=C.HP_MAX,
         status=status,
         phrase=phrase,
+        evolution=species,
+        evolution_stage=stage,
         last_event=clean_event,
         last_backup_date=pet.last_backup_date,
         last_updated=pet.last_updated,
@@ -98,9 +101,10 @@ async def interact(
     pet_service=Depends(get_pet_service),
     phrase_selector=Depends(get_phrase_selector),
 ):
-    pet = await pet_service.interact(db)
-    phrase = await phrase_selector.select(PhraseContext.INTERACT, {})
-    return PetInteractResponse(exp=pet.exp, phrase=phrase)
+    pet, on_cooldown = await pet_service.interact(db)
+    ctx = PhraseContext.INTERACT_COOLDOWN if on_cooldown else PhraseContext.INTERACT
+    phrase = await phrase_selector.select(ctx, {})
+    return PetInteractResponse(exp=pet.exp, phrase=phrase, on_cooldown=on_cooldown)
 
 
 @router.post("/pet/backup", response_model=PetBackupResponse)
@@ -109,11 +113,13 @@ async def backup(
     pet_service=Depends(get_pet_service),
     phrase_selector=Depends(get_phrase_selector),
 ):
-    pet = await pet_service.backup(db)
-    phrase = await phrase_selector.select(PhraseContext.BACKUP, {})
+    pet, on_cooldown = await pet_service.backup(db)
+    ctx = PhraseContext.BACKUP_COOLDOWN if on_cooldown else PhraseContext.BACKUP
+    phrase = await phrase_selector.select(ctx, {})
     return PetBackupResponse(
         exp=pet.exp,
         hp=pet.hp,
         phrase=phrase,
+        on_cooldown=on_cooldown,
         last_backup_date=pet.last_backup_date,
     )

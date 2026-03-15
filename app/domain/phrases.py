@@ -16,7 +16,9 @@ class PhraseContext(str, Enum):
     RECOVERY = "recovery"
     LEVEL_UP = "level_up"
     INTERACT = "interact"
+    INTERACT_COOLDOWN = "interact_cooldown"
     BACKUP = "backup"
+    BACKUP_COOLDOWN = "backup_cooldown"
     TASK_DONE = "task_done"
 
 

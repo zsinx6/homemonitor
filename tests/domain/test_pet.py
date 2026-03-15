@@ -11,7 +11,7 @@ from app.domain.pet import (
     apply_complete_task,
     apply_backup,
     derive_status,
-    LevelUpResult,
+    get_evolution,
 )
 
 
@@ -59,7 +59,8 @@ class TestDeriveStatus:
         assert derive_status(pet, any_server_down=True) == "sad"
 
     def test_sad_when_hp_in_mid_range(self):
-        pet = _pet(hp=C.HP_SAD_THRESHOLD)
+        # hp between 3 and HP_HAPPY_THRESHOLD (7) with no servers down → sad
+        pet = _pet(hp=5)
         assert derive_status(pet, any_server_down=False) == "sad"
 
     def test_injured_when_hp_low(self):
@@ -217,6 +218,16 @@ class TestApplyInteract:
         result = apply_interact(pet)
         assert result.exp == C.EXP_INTERACT
 
+    def test_heals_hp(self):
+        pet = _pet(hp=5)
+        result = apply_interact(pet)
+        assert result.hp == min(5 + C.HP_GAIN_INTERACT, C.HP_MAX)
+
+    def test_hp_capped_at_max(self):
+        pet = _pet(hp=C.HP_MAX)
+        result = apply_interact(pet)
+        assert result.hp == C.HP_MAX
+
     def test_updates_last_interaction_date(self):
         old = _now() - timedelta(hours=48)
         pet = _pet(last_interaction_date=old)
@@ -284,3 +295,43 @@ class TestApplyBackup:
         pet = _pet()
         result = apply_backup(pet)
         assert result.last_event == "backup"
+
+
+# ---------------------------------------------------------------------------
+# get_evolution
+# ---------------------------------------------------------------------------
+
+class TestGetEvolution:
+    def test_level_1_is_koromon(self):
+        species, stage = get_evolution(1)
+        assert species == "Koromon"
+        assert stage == "in-training"
+
+    def test_level_4_still_in_training(self):
+        species, stage = get_evolution(4)
+        assert species == "Koromon"
+
+    def test_level_5_is_agumon(self):
+        species, stage = get_evolution(5)
+        assert species == "Agumon"
+        assert stage == "rookie"
+
+    def test_level_15_is_greymon(self):
+        species, stage = get_evolution(15)
+        assert species == "Greymon"
+        assert stage == "champion"
+
+    def test_level_30_is_metalgreymon(self):
+        species, stage = get_evolution(30)
+        assert species == "MetalGreymon"
+        assert stage == "ultimate"
+
+    def test_level_50_is_wargreymon(self):
+        species, stage = get_evolution(50)
+        assert species == "WarGreymon"
+        assert stage == "mega"
+
+    def test_very_high_level_is_wargreymon(self):
+        species, stage = get_evolution(999)
+        assert species == "WarGreymon"
+        assert stage == "mega"

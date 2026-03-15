@@ -21,6 +21,8 @@ class PetResponse(BaseModel):
     hp_max: int
     status: str
     phrase: str
+    evolution: str
+    evolution_stage: str
     last_event: Optional[str]
     last_backup_date: Optional[datetime]
     last_updated: datetime
@@ -29,13 +31,15 @@ class PetResponse(BaseModel):
 class PetInteractResponse(BaseModel):
     exp: int
     phrase: str
+    on_cooldown: bool = False
 
 
 class PetBackupResponse(BaseModel):
     exp: int
     hp: int
     phrase: str
-    last_backup_date: datetime
+    on_cooldown: bool = False
+    last_backup_date: Optional[datetime]
 
 
 # ---------------------------------------------------------------------------

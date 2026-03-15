@@ -395,6 +395,12 @@
 
     .task-text { font-size: 8px; flex: 1; }
     .task-text.done { text-decoration: line-through; color: var(--grey); }
+    .task-delete-btn {
+      background: none; border: none; color: var(--grey);
+      cursor: pointer; font-size: 9px; padding: 0 2px; line-height: 1;
+      opacity: 0.5; transition: opacity 0.2s, color 0.2s;
+    }
+    .task-delete-btn:hover { opacity: 1; color: var(--red); }
 
     .completed-divider {
       font-size: 7px;
@@ -467,7 +473,10 @@
   </div>
 
   <div id="stats-panel">
-    <div id="pet-name-level">AGUMON &nbsp; LV.<span id="pet-level">1</span></div>
+    <div id="pet-name-level">
+      <span id="pet-species">AGUMON</span> &nbsp; LV.<span id="pet-level">1</span>
+      <span id="pet-stage" style="display:block;font-size:7px;letter-spacing:2px;color:var(--grey)">ROOKIE</span>
+    </div>
 
     <div>
       <div style="font-size:7px;color:var(--grey);margin-bottom:3px">HP</div>
@@ -578,12 +587,20 @@
      FACE DEFINITIONS
 ===================================================================== -->
 <script>
-const FACES = {
-  happy:   "  ▲\n╠══════╣\n║ ◆  ◆ ║\n║  ⚡  ║\n║  ᴗ   ║\n╚══════╝",
-  lonely:  "  △\n╠══════╣\n║ ─  ─ ║\n║  ...  ║\n║  ___  ║\n╚══════╝",
-  sad:     "  ▽\n╠══════╣\n║ ╥  ╥ ║\n║  ≈  ║\n║  ︵  ║\n╚══════╝",
-  injured: "  ▽\n╠══════╣\n║ ×  × ║\n║  ⚡  ║\n║  _/‾ ║\n╚══════╝",
-  critical:"  ✕\n╠══════╣\n║ ✕  ✕ ║\n║  !!! ║\n║  ___ ║\n╚══════╝",
+const CREST = {
+  "in-training": "   •",
+  "rookie":      "   ▲",
+  "champion":    " ▲▲▲",
+  "ultimate":    " ⊕⊕⊕",
+  "mega":        " ◆✦◆",
+};
+
+const FACE_BODY = {
+  happy:   "\n╠══════╣\n║ ◆  ◆ ║\n║  ⚡  ║\n║  ᴗ   ║\n╚══════╝",
+  lonely:  "\n╠══════╣\n║ ─  ─ ║\n║  ...  ║\n║  ___  ║\n╚══════╝",
+  sad:     "\n╠══════╣\n║ ╥  ╥ ║\n║   ≈  ║\n║  ︵  ║\n╚══════╝",
+  injured: "\n╠══════╣\n║ ×  × ║\n║  ⚡  ║\n║  _/‾ ║\n╚══════╝",
+  critical:"\n╠══════╣\n║ ✕  ✕ ║\n║  !!! ║\n║  ___ ║\n╚══════╝",
 };
 
 /* =====================================================================
@@ -658,15 +675,20 @@ function setSpeech(text) {
 function renderPet(pet, lastEvent) {
   const face   = document.getElementById("digimon-face");
   const status = pet.status;
+  const stage  = pet.evolution_stage || "rookie";
 
-  // Update face character
-  if (FACES[status]) face.textContent = FACES[status];
+  // Build face from evolution crest + status expression
+  const crest = CREST[stage] || CREST["rookie"];
+  const body  = FACE_BODY[status] || FACE_BODY.happy;
+  face.textContent = crest + body;
 
   // Swap status class
   face.className = `status-${status}`;
 
-  // Pet name / level
+  // Pet species / level / stage
+  document.getElementById("pet-species").textContent = (pet.evolution || "AGUMON").toUpperCase();
   document.getElementById("pet-level").textContent = pet.level;
+  document.getElementById("pet-stage").textContent = stage.toUpperCase();
 
   // HP pips
   const hpBar = document.getElementById("hp-bar");
@@ -801,6 +823,7 @@ function renderTasks(tasks) {
 <div class="task-item" id="task-${t.id}">
   <input type="checkbox" class="task-checkbox" onchange="completeTask(${t.id}, this)">
   <span class="task-text">${escHtml(t.task)}</span>
+  <button class="task-delete-btn" onclick="deleteTask(${t.id})" title="Delete task">✕</button>
 </div>`).join("");
 
   const completedHtml = completed.length ? `
@@ -818,17 +841,26 @@ ${completed.map(t => `
    POLL
 ===================================================================== */
 async function poll() {
-  // Fetch each resource independently so a single failure doesn't block all updates
-  const petResult     = await api("GET", "/api/pet").catch(() => null);
-  const serversResult = await api("GET", "/api/servers").catch(() => null);
-  const tasksResult   = await api("GET", "/api/tasks").catch(() => null);
+  // Fetch all resources in parallel so one failure doesn't block others
+  const [petR, serversR, tasksR] = await Promise.allSettled([
+    api("GET", "/api/pet"),
+    api("GET", "/api/servers"),
+    api("GET", "/api/tasks"),
+  ]);
+
+  const petResult     = petR.status     === "fulfilled" ? petR.value     : null;
+  const serversResult = serversR.status === "fulfilled" ? serversR.value : null;
+  const tasksResult   = tasksR.status   === "fulfilled" ? tasksR.value   : null;
 
   if (petResult) {
     showError(false);
     state.pet = petResult;
     renderPet(petResult, petResult.last_event);
   }
-  if (serversResult) renderServers(serversResult);
+  if (serversResult) {
+    state.servers = serversResult;
+    renderServers(serversResult);
+  }
   if (tasksResult)   renderTasks(tasksResult);
   if (!petResult && !serversResult && !tasksResult) showError(true);
 }
@@ -842,6 +874,7 @@ async function petInteract(event) {
   try {
     const res = await api("POST", "/api/pet/interact");
     setSpeech(res.phrase);
+    if (res.on_cooldown) return;  // No EXP update — cooldown active
     // Optimistic EXP update
     if (state.pet) {
       state.pet.exp = res.exp;
@@ -909,6 +942,14 @@ async function completeTask(id, checkbox) {
   setTimeout(() => poll(), 400);
 }
 
+async function deleteTask(id) {
+  if (!confirm("Delete this task?")) return;
+  try {
+    await api("DELETE", `/api/tasks/${id}`);
+    await poll();
+  } catch (_) {}
+}
+
 async function runBackup() {
   const btn = document.getElementById("backup-btn");
   btn.disabled = true;
@@ -916,6 +957,11 @@ async function runBackup() {
   try {
     const res = await api("POST", "/api/pet/backup");
     setSpeech(res.phrase);
+    if (res.on_cooldown) {
+      btn.textContent = "⏳ ON COOLDOWN";
+      setTimeout(() => { btn.textContent = "💾 FEED BACKUP"; btn.disabled = false; }, 3000);
+      return;
+    }
     triggerAnim(document.getElementById("digimon-face"), "anim-backup");
     await poll();
   } catch (_) {}

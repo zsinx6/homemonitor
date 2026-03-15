@@ -19,6 +19,14 @@ class TestPetRoutes:
         assert "status" in data
         assert "phrase" in data
         assert "hp_max" in data
+        assert "evolution" in data
+        assert "evolution_stage" in data
+
+    async def test_get_pet_evolution_field(self, client):
+        data = (await client.get("/api/pet")).json()
+        # Fresh pet starts at level 1 — should be Koromon (in-training)
+        assert data["evolution"] == "Koromon"
+        assert data["evolution_stage"] == "in-training"
 
     async def test_get_pet_last_event_field_present(self, client):
         data = (await client.get("/api/pet")).json()
@@ -37,14 +45,26 @@ class TestPetRoutes:
         data = r.json()
         assert "phrase" in data
         assert len(data["phrase"]) > 0
+        assert "on_cooldown" in data
 
-    async def test_interact_changes_status_from_lonely_to_happy(self, client):
-        # Fresh pet has never been interacted with → lonely
-        before = (await client.get("/api/pet")).json()["status"]
-        assert before == "lonely"
+    async def test_fresh_pet_starts_happy(self, client):
+        # Seeded pet has last_interaction_date set (1h ago) → no lonely drain → happy
+        data = (await client.get("/api/pet")).json()
+        assert data["status"] == "happy"
+
+    async def test_interact_on_cooldown_returns_flag(self, client):
+        # First interact succeeds; immediate second should be on cooldown
         await client.post("/api/pet/interact")
-        after = (await client.get("/api/pet")).json()["status"]
-        assert after == "happy"
+        r2 = await client.post("/api/pet/interact")
+        assert r2.status_code == 200
+        assert r2.json()["on_cooldown"] is True
+
+    async def test_interact_heals_hp(self, client):
+        hp_before = (await client.get("/api/pet")).json()["hp"]
+        await client.post("/api/pet/interact")
+        hp_after = (await client.get("/api/pet")).json()["hp"]
+        from app.domain import constants as C
+        assert hp_after == min(hp_before + C.HP_GAIN_INTERACT, C.HP_MAX)
 
     async def test_backup_increases_exp_and_hp(self, client):
         # Drain HP first so we can verify HP recovery
@@ -54,6 +74,14 @@ class TestPetRoutes:
         data = r.json()
         assert data["exp"] == initial["exp"] + C.EXP_BACKUP
         assert data["last_backup_date"] is not None
+        assert "on_cooldown" in data
+
+    async def test_backup_on_cooldown_returns_flag(self, client):
+        # First backup succeeds; immediate second should be on cooldown
+        await client.post("/api/pet/backup")
+        r2 = await client.post("/api/pet/backup")
+        assert r2.status_code == 200
+        assert r2.json()["on_cooldown"] is True
 
     async def test_backup_actually_increases_hp(self, client):
         # Pet starts at HP_MAX; backup can't increase it.
