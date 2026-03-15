@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DigiMon(itor)</title>
+  <link href="https://unpkg.com/nes.css@2.3.0/css/nes.min.css" rel="stylesheet">
+  <style>
+    /* =====================================================================
+       RESET & BASE
+    ===================================================================== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #1a1a2e;
+      --surface:  #16213e;
+      --border:   #0f3460;
+      --green:    #00ff87;
+      --red:      #ff4757;
+      --yellow:   #ffd32a;
+      --blue:     #00b4d8;
+      --white:    #e8f4f8;
+      --grey:     #4a5568;
+      --gold:     #ffd700;
+      --hp-full:  #00ff87;
+      --hp-empty: #2d3748;
+    }
+
+    html { font-size: 14px; }
+
+    body {
+      background: var(--bg);
+      color: var(--white);
+      font-family: "Press Start 2P", monospace;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* =====================================================================
+       STICKY PET HEADER
+    ===================================================================== */
+    #pet-header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--surface);
+      border-bottom: 4px solid var(--border);
+      padding: 12px 16px 8px;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 12px;
+      min-height: 180px;
+    }
+
+    /* --- Face area --- */
+    #face-area {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      min-width: 110px;
+    }
+
+    #digimon-face {
+      font-size: 11px;
+      line-height: 1.5;
+      white-space: pre;
+      color: var(--green);
+      cursor: pointer;
+      user-select: none;
+      text-shadow: 0 0 8px currentColor;
+      transition: color 0.4s ease;
+    }
+
+    #digimon-face:hover { transform: scale(1.05); }
+    #digimon-face:active { transform: scale(0.97); }
+
+    /* Status-based face colours */
+    #digimon-face.status-happy    { color: var(--green); }
+    #digimon-face.status-lonely   { color: #a0aec0; }
+    #digimon-face.status-sad      { color: var(--yellow); }
+    #digimon-face.status-injured  { color: var(--red); }
+    #digimon-face.status-critical { color: #ff0000; }
+
+    /* --- Idle animations --- */
+    @keyframes bob-happy {
+      0%, 100% { transform: translateY(0); }
+      50%       { transform: translateY(-4px); }
+    }
+    @keyframes bob-sad {
+      0%, 100% { transform: translateY(0); }
+      50%       { transform: translateY(-2px); }
+    }
+    @keyframes tremor {
+      0%, 100% { transform: translateX(0); }
+      20%       { transform: translateX(-2px) rotate(-1deg); }
+      40%       { transform: translateX(2px) rotate(1deg); }
+      60%       { transform: translateX(-2px); }
+      80%       { transform: translateX(2px); }
+    }
+
+    #digimon-face.status-happy   { animation: bob-happy 2s ease-in-out infinite; }
+    #digimon-face.status-lonely  { animation: bob-sad 4s ease-in-out infinite; }
+    #digimon-face.status-sad     { animation: bob-sad 3.5s ease-in-out infinite; }
+    #digimon-face.status-injured { animation: tremor 0.6s ease-in-out infinite; }
+    #digimon-face.status-critical{ animation: tremor 0.3s ease-in-out infinite; }
+
+    /* --- Event animations (JS adds/removes these classes) --- */
+    @keyframes hit {
+      0%   { transform: translateX(0); color: var(--red); filter: brightness(2); }
+      20%  { transform: translateX(-8px); }
+      40%  { transform: translateX(8px); }
+      60%  { transform: translateX(-4px); }
+      80%  { transform: translateX(4px); }
+      100% { transform: translateX(0); color: inherit; filter: brightness(1); }
+    }
+    @keyframes levelup {
+      0%   { transform: translateY(0) scale(1); filter: drop-shadow(0 0 0 var(--gold)); }
+      30%  { transform: translateY(-16px) scale(1.15); filter: drop-shadow(0 0 12px var(--gold)); color: var(--gold); }
+      60%  { transform: translateY(-8px) scale(1.1); }
+      100% { transform: translateY(0) scale(1); filter: none; }
+    }
+    @keyframes recovery {
+      0%   { filter: brightness(1); }
+      40%  { filter: brightness(2) drop-shadow(0 0 8px var(--green)); color: var(--green); }
+      100% { filter: brightness(1); }
+    }
+    @keyframes backup-celebrate {
+      0%   { transform: scale(1) rotate(0deg); }
+      25%  { transform: scale(1.2) rotate(-5deg); filter: drop-shadow(0 0 16px var(--gold)); color: var(--gold); }
+      50%  { transform: scale(1.15) rotate(5deg); }
+      75%  { transform: scale(1.1) rotate(-3deg); }
+      100% { transform: scale(1) rotate(0deg); filter: none; }
+    }
+
+    #digimon-face.anim-hit       { animation: hit 0.5s ease forwards; }
+    #digimon-face.anim-levelup   { animation: levelup 1s ease forwards; }
+    #digimon-face.anim-recovery  { animation: recovery 0.8s ease forwards; }
+    #digimon-face.anim-backup    { animation: backup-celebrate 1.2s ease forwards; }
+
+    /* --- Stats panel --- */
+    #stats-panel {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    #pet-name-level {
+      font-size: 10px;
+      color: var(--blue);
+    }
+
+    #hp-bar {
+      display: flex;
+      gap: 3px;
+      flex-wrap: wrap;
+    }
+
+    .hp-pip {
+      width: 14px; height: 14px;
+      background: var(--hp-full);
+      border: 2px solid var(--white);
+      transition: background 0.3s;
+    }
+    .hp-pip.empty { background: var(--hp-empty); }
+
+    @keyframes pip-damage { 0%,100% { background: var(--hp-full); } 50% { background: var(--red); } }
+    @keyframes pip-heal   { 0%,100% { background: var(--hp-full); } 50% { background: white; } }
+    .hp-pip.anim-damage { animation: pip-damage 0.4s ease; }
+    .hp-pip.anim-heal   { animation: pip-heal 0.4s ease; }
+
+    #exp-label { font-size: 8px; color: var(--grey); }
+
+    #exp-track {
+      background: var(--hp-empty);
+      border: 2px solid var(--white);
+      height: 14px;
+      position: relative;
+      overflow: hidden;
+    }
+    #exp-fill {
+      height: 100%;
+      background: var(--blue);
+      transition: width 0.5s ease;
+    }
+
+    /* Speech bubble */
+    #speech-bubble {
+      background: var(--surface);
+      border: 3px solid var(--white);
+      padding: 6px 8px;
+      font-size: 8px;
+      line-height: 1.6;
+      color: var(--white);
+      min-height: 36px;
+      position: relative;
+    }
+    #speech-bubble::before {
+      content: "";
+      position: absolute;
+      left: 16px; bottom: -10px;
+      border: 5px solid transparent;
+      border-top-color: var(--white);
+    }
+    #speech-text {
+      opacity: 1;
+      transition: opacity 0.3s ease;
+    }
+    #speech-text.fading { opacity: 0; }
+
+    /* Floating hearts on interact */
+    .floating-heart {
+      position: fixed;
+      font-size: 18px;
+      pointer-events: none;
+      z-index: 999;
+      animation: float-up 1s ease forwards;
+    }
+    @keyframes float-up {
+      0%   { transform: translateY(0); opacity: 1; }
+      100% { transform: translateY(-80px); opacity: 0; }
+    }
+
+    /* Floating EXP text */
+    .floating-exp {
+      position: fixed;
+      font-size: 10px;
+      color: var(--blue);
+      pointer-events: none;
+      z-index: 999;
+      animation: float-up 1.2s ease forwards;
+    }
+
+    /* =====================================================================
+       TAB NAVIGATION (pure CSS)
+    ===================================================================== */
+    .tab-inputs { display: none; }
+
+    .tab-nav {
+      display: flex;
+      background: var(--surface);
+      border-bottom: 3px solid var(--border);
+      position: sticky;
+      top: 180px;
+      z-index: 99;
+    }
+
+    .tab-label {
+      flex: 1;
+      text-align: center;
+      padding: 8px 4px;
+      font-size: 8px;
+      color: var(--grey);
+      cursor: pointer;
+      border-right: 2px solid var(--border);
+      transition: color 0.2s;
+    }
+    .tab-label:last-child { border-right: none; }
+    .tab-label:hover { color: var(--white); }
+
+    #tab-infra:checked ~ .tab-nav label[for="tab-infra"],
+    #tab-tasks:checked ~ .tab-nav label[for="tab-tasks"],
+    #tab-maint:checked ~ .tab-nav label[for="tab-maint"] {
+      color: var(--green);
+      border-bottom: 3px solid var(--green);
+      margin-bottom: -3px;
+    }
+
+    .tab-content { display: none; padding: 16px; }
+
+    #tab-infra:checked ~ #panel-infra,
+    #tab-tasks:checked ~ #panel-tasks,
+    #tab-maint:checked ~ #panel-maint { display: block; }
+
+    /* =====================================================================
+       INFRASTRUCTURE TAB
+    ===================================================================== */
+    #server-list {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .server-card {
+      background: var(--surface);
+      border: 3px solid var(--border);
+      padding: 10px 12px;
+      transition: border-color 0.3s;
+    }
+    .server-card.down { border-color: var(--red); animation: card-pulse 1.5s ease-in-out infinite; }
+
+    @keyframes card-pulse {
+      0%, 100% { border-color: var(--red); }
+      50%       { border-color: #ff000080; }
+    }
+
+    .server-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .status-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .status-dot.up   { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .status-dot.down { background: var(--red); box-shadow: 0 0 6px var(--red); animation: dot-pulse 1s ease-in-out infinite; }
+
+    @keyframes dot-pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.4; }
+    }
+
+    .server-name  { font-size: 9px; flex: 1; }
+    .server-addr  { font-size: 7px; color: var(--grey); margin-bottom: 6px; }
+    .uptime-label { font-size: 7px; color: var(--grey); margin-bottom: 4px; }
+
+    .uptime-bar-track {
+      background: var(--hp-empty);
+      border: 2px solid var(--border);
+      height: 10px;
+      margin-bottom: 8px;
+    }
+    .uptime-bar-fill {
+      height: 100%;
+      background: var(--green);
+      transition: width 0.5s ease;
+    }
+    .uptime-bar-fill.partial  { background: var(--yellow); }
+    .uptime-bar-fill.critical { background: var(--red); }
+
+    /* 7-day uptime grid */
+    .uptime-grid { display: flex; gap: 3px; margin-bottom: 4px; }
+
+    .uptime-day {
+      width: 14px; height: 20px;
+      background: var(--grey);
+      position: relative;
+      cursor: default;
+    }
+    .uptime-day.green  { background: var(--green); }
+    .uptime-day.yellow { background: var(--yellow); }
+    .uptime-day.red    { background: var(--red); }
+
+    /* CSS tooltip */
+    .uptime-day::after {
+      content: attr(data-tip);
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #000;
+      color: var(--white);
+      font-size: 7px;
+      padding: 3px 5px;
+      white-space: nowrap;
+      border: 1px solid var(--white);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+      z-index: 200;
+    }
+    .uptime-day:hover::after { opacity: 1; }
+
+    /* Add server form */
+    #add-server-form { margin-top: 8px; }
+    #add-server-form h3 { font-size: 9px; color: var(--blue); margin-bottom: 10px; }
+
+    /* =====================================================================
+       TASKS TAB
+    ===================================================================== */
+    #task-list { margin-bottom: 16px; }
+
+    .task-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 0;
+      border-bottom: 2px solid var(--border);
+      transition: opacity 0.3s, transform 0.3s;
+    }
+    .task-item.completing { opacity: 0; transform: translateX(20px); }
+
+    .task-checkbox {
+      width: 16px; height: 16px;
+      cursor: pointer;
+      accent-color: var(--green);
+      flex-shrink: 0;
+    }
+
+    .task-text { font-size: 8px; flex: 1; }
+    .task-text.done { text-decoration: line-through; color: var(--grey); }
+
+    .completed-divider {
+      font-size: 7px;
+      color: var(--grey);
+      margin: 12px 0 6px;
+      border-top: 2px solid var(--border);
+      padding-top: 8px;
+    }
+
+    /* Add task form */
+    #add-task-form { margin-top: 8px; }
+
+    /* =====================================================================
+       MAINTENANCE TAB
+    ===================================================================== */
+    #backup-counter {
+      font-size: 24px;
+      text-align: center;
+      padding: 20px 0 8px;
+      color: var(--green);
+    }
+    #backup-counter.overdue { color: var(--red); animation: tremor 1s ease-in-out infinite; }
+    #backup-counter-label   { font-size: 8px; text-align: center; color: var(--grey); margin-bottom: 24px; }
+
+    #backup-btn {
+      display: block;
+      width: 100%;
+      margin-top: 8px;
+      font-size: 10px !important;
+    }
+
+    /* =====================================================================
+       SHARED FORM STYLES
+    ===================================================================== */
+    .form-row { margin-bottom: 10px; }
+    .form-label { font-size: 7px; color: var(--grey); display: block; margin-bottom: 4px; }
+    .nes-input, .nes-select select { font-size: 8px !important; width: 100%; }
+    .nes-btn { font-size: 8px !important; }
+
+    /* =====================================================================
+       LOADING / ERROR OVERLAY
+    ===================================================================== */
+    #error-banner {
+      display: none;
+      background: var(--red);
+      color: #000;
+      font-size: 8px;
+      padding: 6px 12px;
+      text-align: center;
+    }
+    #error-banner.visible { display: block; }
+  </style>
+</head>
+<body>
+
+<!-- =====================================================================
+     STICKY HEADER
+===================================================================== -->
+<div id="error-banner">⚠ Could not reach the server. Retrying...</div>
+
+<header id="pet-header">
+  <div id="face-area">
+    <pre id="digimon-face" class="status-happy" title="Click to pet!">
+  ▲
+╠══════╣
+║ ◆  ◆ ║
+║  ⚡  ║
+║  ᴗ   ║
+╚══════╝</pre>
+  </div>
+
+  <div id="stats-panel">
+    <div id="pet-name-level">AGUMON &nbsp; LV.<span id="pet-level">1</span></div>
+
+    <div>
+      <div style="font-size:7px;color:var(--grey);margin-bottom:3px">HP</div>
+      <div id="hp-bar"></div>
+    </div>
+
+    <div>
+      <div id="exp-label">EXP &nbsp;<span id="exp-val">0</span> / <span id="exp-max">100</span></div>
+      <div id="exp-track"><div id="exp-fill" style="width:0%"></div></div>
+    </div>
+
+    <div id="speech-bubble">
+      <span id="speech-text">Booting up... scanning infrastructure...</span>
+    </div>
+  </div>
+</header>
+
+<!-- =====================================================================
+     TAB NAVIGATION (pure CSS, radio inputs hidden)
+===================================================================== -->
+<input class="tab-inputs" type="radio" name="tab" id="tab-infra" checked>
+<input class="tab-inputs" type="radio" name="tab" id="tab-tasks">
+<input class="tab-inputs" type="radio" name="tab" id="tab-maint">
+
+<nav class="tab-nav">
+  <label class="tab-label" for="tab-infra">⚡ INFRA</label>
+  <label class="tab-label" for="tab-tasks">✓ TASKS</label>
+  <label class="tab-label" for="tab-maint">💾 MAINT</label>
+</nav>
+
+<!-- =====================================================================
+     INFRASTRUCTURE TAB
+===================================================================== -->
+<div class="tab-content" id="panel-infra">
+  <div id="server-list">
+    <div style="font-size:8px;color:var(--grey);text-align:center;padding:20px 0">
+      No servers monitored yet. Add one below.
+    </div>
+  </div>
+
+  <div id="add-server-form">
+    <h3>➕ ADD SERVER</h3>
+    <div class="form-row">
+      <label class="form-label" for="srv-name">NAME</label>
+      <input id="srv-name" type="text" class="nes-input" placeholder="nginx" maxlength="100">
+    </div>
+    <div class="form-row">
+      <label class="form-label" for="srv-addr">ADDRESS (URL or IP)</label>
+      <input id="srv-addr" type="text" class="nes-input" placeholder="https://example.com" maxlength="500">
+    </div>
+    <div class="form-row">
+      <label class="form-label" for="srv-port">PORT (optional)</label>
+      <input id="srv-port" type="number" class="nes-input" placeholder="80" min="1" max="65535">
+    </div>
+    <div class="form-row">
+      <label class="form-label" for="srv-type">TYPE</label>
+      <div class="nes-select">
+        <select id="srv-type">
+          <option value="http">HTTP</option>
+          <option value="ping">PING</option>
+        </select>
+      </div>
+    </div>
+    <button class="nes-btn is-primary" onclick="addServer()">ADD SERVER</button>
+  </div>
+</div>
+
+<!-- =====================================================================
+     TASKS TAB
+===================================================================== -->
+<div class="tab-content" id="panel-tasks">
+  <div id="task-list">
+    <div style="font-size:8px;color:var(--grey);text-align:center;padding:20px 0">
+      No tasks yet. Add your first sysadmin task below.
+    </div>
+  </div>
+
+  <div id="add-task-form">
+    <div class="form-row">
+      <label class="form-label" for="task-input">NEW TASK</label>
+      <input id="task-input" type="text" class="nes-input"
+             placeholder="Fix nginx backup" maxlength="500"
+             onkeydown="if(event.key==='Enter') addTask()">
+    </div>
+    <button class="nes-btn is-primary" onclick="addTask()">ADD TASK</button>
+  </div>
+</div>
+
+<!-- =====================================================================
+     MAINTENANCE TAB
+===================================================================== -->
+<div class="tab-content" id="panel-maint">
+  <div id="backup-counter">—</div>
+  <div id="backup-counter-label">DAYS SINCE LAST BACKUP</div>
+
+  <div style="font-size:8px;color:var(--grey);text-align:center;padding:0 0 16px">
+    Running a backup grants the Digimon<br>
+    <span style="color:var(--gold)">+50 EXP</span> &amp;
+    <span style="color:var(--green)">+5 HP</span>
+  </div>
+
+  <button id="backup-btn" class="nes-btn is-success" onclick="runBackup()">
+    💾 FEED BACKUP
+  </button>
+</div>
+
+<!-- =====================================================================
+     FACE DEFINITIONS
+===================================================================== -->
+<script>
+const FACES = {
+  happy:   "  ▲\n╠══════╣\n║ ◆  ◆ ║\n║  ⚡  ║\n║  ᴗ   ║\n╚══════╝",
+  lonely:  "  △\n╠══════╣\n║ ─  ─ ║\n║  ...  ║\n║  ___  ║\n╚══════╝",
+  sad:     "  ▽\n╠══════╣\n║ ╥  ╥ ║\n║  ≈  ║\n║  ︵  ║\n╚══════╝",
+  injured: "  ▽\n╠══════╣\n║ ×  × ║\n║  ⚡  ║\n║  _/‾ ║\n╚══════╝",
+  critical:"  ✕\n╠══════╣\n║ ✕  ✕ ║\n║  !!! ║\n║  ___ ║\n╚══════╝",
+};
+
+/* =====================================================================
+   STATE
+===================================================================== */
+const state = {
+  pet: null,
+  servers: [],
+  prevStatus: null,
+  prevHp: null,
+  prevExp: null,
+  prevLevel: null,
+};
+
+/* =====================================================================
+   HELPERS
+===================================================================== */
+async function api(method, path, body) {
+  try {
+    const res = await fetch(path, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (res.status === 204) return {};
+    return res.json();
+  } catch (e) {
+    showError(true);
+    throw e;
+  }
+}
+
+function showError(visible) {
+  document.getElementById("error-banner").classList.toggle("visible", visible);
+}
+
+function getRect(el) {
+  return el.getBoundingClientRect();
+}
+
+function spawnFloat(x, y, text, cls) {
+  const el = document.createElement("div");
+  el.className = cls;
+  el.textContent = text;
+  el.style.left = x + "px";
+  el.style.top  = y + "px";
+  document.body.appendChild(el);
+  el.addEventListener("animationend", () => el.remove());
+}
+
+function triggerAnim(el, cls) {
+  el.classList.remove("anim-hit","anim-levelup","anim-recovery","anim-backup");
+  // Force reflow
+  void el.offsetWidth;
+  el.classList.add(cls);
+  el.addEventListener("animationend", () => el.classList.remove(cls), { once: true });
+}
+
+function setSpeech(text) {
+  const sp = document.getElementById("speech-text");
+  sp.classList.add("fading");
+  setTimeout(() => {
+    sp.textContent = text;
+    sp.classList.remove("fading");
+  }, 300);
+}
+
+/* =====================================================================
+   RENDER PET HEADER
+===================================================================== */
+function renderPet(pet, lastEvent) {
+  const face   = document.getElementById("digimon-face");
+  const status = pet.status;
+
+  // Update face character
+  if (FACES[status]) face.textContent = FACES[status];
+
+  // Swap status class
+  face.className = `status-${status}`;
+
+  // Pet name / level
+  document.getElementById("pet-level").textContent = pet.level;
+
+  // HP pips
+  const hpBar = document.getElementById("hp-bar");
+  hpBar.innerHTML = "";
+  for (let i = 0; i < pet.hp_max; i++) {
+    const pip = document.createElement("div");
+    pip.className = "hp-pip" + (i < pet.hp ? "" : " empty");
+    hpBar.appendChild(pip);
+  }
+
+  // Animate HP changes
+  if (state.prevHp !== null && pet.hp !== state.prevHp) {
+    const animCls = pet.hp < state.prevHp ? "anim-damage" : "anim-heal";
+    [...hpBar.children].forEach((pip, i) => {
+      if (i < Math.max(pet.hp, state.prevHp)) pip.classList.add(animCls);
+      setTimeout(() => pip.classList.remove(animCls), 500);
+    });
+  }
+
+  // EXP bar — handle level-up reset
+  const expFill  = document.getElementById("exp-fill");
+  const expVal   = document.getElementById("exp-val");
+  const expMax   = document.getElementById("exp-max");
+  const pct      = Math.min(100, Math.round((pet.exp / pet.max_exp) * 100));
+  expVal.textContent = pet.exp;
+  expMax.textContent = pet.max_exp;
+
+  if (state.prevLevel !== null && pet.level > state.prevLevel) {
+    // Level-up: briefly show full bar then reset
+    expFill.style.width = "100%";
+    setTimeout(() => { expFill.style.width = pct + "%"; }, 600);
+  } else {
+    expFill.style.width = pct + "%";
+  }
+
+  // Speech bubble
+  setSpeech(pet.phrase);
+
+  // Event-based animations
+  if (lastEvent === "server_down") triggerAnim(face, "anim-hit");
+  else if (lastEvent === "level_up") triggerAnim(face, "anim-levelup");
+  else if (lastEvent === "recovery") triggerAnim(face, "anim-recovery");
+  else if (lastEvent === "backup")   triggerAnim(face, "anim-backup");
+
+  // Backup counter in maintenance tab
+  const days = pet.last_backup_date
+    ? Math.floor((Date.now() - new Date(pet.last_backup_date)) / 86400000)
+    : null;
+  const counter = document.getElementById("backup-counter");
+  const lbl     = document.getElementById("backup-counter-label");
+  if (days === null) {
+    counter.textContent = "NEVER";
+    counter.className = "overdue";
+    lbl.textContent = "LAST BACKUP";
+  } else {
+    counter.textContent = days;
+    counter.className = days >= 30 ? "overdue" : "";
+    lbl.textContent = "DAYS SINCE LAST BACKUP";
+  }
+
+  // Persist previous values for next diff
+  state.prevStatus = status;
+  state.prevHp     = pet.hp;
+  state.prevExp    = pet.exp;
+  state.prevLevel  = pet.level;
+}
+
+/* =====================================================================
+   RENDER SERVERS
+===================================================================== */
+function uptimeClass(pct) {
+  if (pct >= 95) return "green";
+  if (pct >= 70) return "yellow";
+  return "red";
+}
+
+function renderServers(servers) {
+  const list = document.getElementById("server-list");
+  if (!servers.length) {
+    list.innerHTML = '<div style="font-size:8px;color:var(--grey);text-align:center;padding:20px 0">No servers monitored yet. Add one below.</div>';
+    return;
+  }
+
+  list.innerHTML = servers.map(s => {
+    const isDown    = s.status === "DOWN";
+    const uptimePct = s.uptime_percent.toFixed(1);
+    const barClass  = uptimeClass(s.uptime_percent);
+
+    // 7-day grid — sort ascending so today is rightmost
+    const sorted = [...(s.daily_stats || [])].sort((a, b) => a.date > b.date ? 1 : -1);
+    const daySquares = sorted.map(d =>
+      `<div class="uptime-day ${uptimeClass(d.uptime_percent)}"
+            data-tip="${d.date}: ${d.uptime_percent.toFixed(1)}%"></div>`
+    ).join("");
+
+    return `
+<div class="server-card ${isDown ? "down" : ""}" data-id="${s.id}">
+  <div class="server-header">
+    <div class="status-dot ${isDown ? "down" : "up"}"></div>
+    <div class="server-name">${escHtml(s.name)}</div>
+    <div style="font-size:7px;color:var(--grey)">${s.type.toUpperCase()}</div>
+    <button class="nes-btn is-error" style="font-size:6px!important;padding:2px 6px;margin-left:4px"
+            onclick="deleteServer(${s.id})">✕</button>
+  </div>
+  <div class="server-addr">${escHtml(s.address)}${s.port ? ":"+s.port : ""}</div>
+  ${isDown && s.last_error ? `<div style="font-size:7px;color:var(--red);margin-bottom:4px">⚠ ${escHtml(s.last_error)}</div>` : ""}
+  <div class="uptime-label">UPTIME ${uptimePct}% &nbsp; (${s.total_checks} checks)</div>
+  <div class="uptime-bar-track">
+    <div class="uptime-bar-fill ${barClass}" style="width:${uptimePct}%"></div>
+  </div>
+  <div style="font-size:7px;color:var(--grey);margin-bottom:3px">LAST 7 DAYS</div>
+  <div class="uptime-grid">${daySquares || '<div style="font-size:7px;color:var(--grey)">No data yet</div>'}</div>
+  ${s.last_checked ? `<div style="font-size:6px;color:var(--grey)">Last checked: ${new Date(s.last_checked).toLocaleTimeString()}</div>` : ""}
+</div>`;
+  }).join("");
+}
+
+/* =====================================================================
+   RENDER TASKS
+===================================================================== */
+function renderTasks(tasks) {
+  const pending   = tasks.filter(t => !t.is_completed);
+  const completed = tasks.filter(t => t.is_completed);
+  const list      = document.getElementById("task-list");
+
+  if (!tasks.length) {
+    list.innerHTML = '<div style="font-size:8px;color:var(--grey);text-align:center;padding:20px 0">No tasks yet. Add your first sysadmin task below.</div>';
+    return;
+  }
+
+  const pendingHtml = pending.map(t => `
+<div class="task-item" id="task-${t.id}">
+  <input type="checkbox" class="task-checkbox" onchange="completeTask(${t.id}, this)">
+  <span class="task-text">${escHtml(t.task)}</span>
+</div>`).join("");
+
+  const completedHtml = completed.length ? `
+<div class="completed-divider">COMPLETED (${completed.length})</div>
+${completed.map(t => `
+<div class="task-item" id="task-${t.id}">
+  <input type="checkbox" class="task-checkbox" checked disabled>
+  <span class="task-text done">${escHtml(t.task)}</span>
+</div>`).join("")}` : "";
+
+  list.innerHTML = pendingHtml + completedHtml;
+}
+
+/* =====================================================================
+   POLL
+===================================================================== */
+async function poll() {
+  try {
+    const [pet, servers, tasks] = await Promise.all([
+      api("GET", "/api/pet"),
+      api("GET", "/api/servers"),
+      api("GET", "/api/tasks"),
+    ]);
+    showError(false);
+    const lastEvent = pet.last_event;
+    state.pet = pet;
+    state.servers = servers;
+    renderPet(pet, lastEvent);
+    renderServers(servers);
+    renderTasks(tasks);
+  } catch (_) {
+    // error already shown by api()
+  }
+}
+
+/* =====================================================================
+   ACTIONS
+===================================================================== */
+async function petInteract(event) {
+  // Optimistic heart animation
+  spawnFloat(event.clientX - 8, event.clientY - 20, "❤️", "floating-heart");
+  try {
+    const res = await api("POST", "/api/pet/interact");
+    setSpeech(res.phrase);
+    // Optimistic EXP update
+    if (state.pet) {
+      state.pet.exp = res.exp;
+      const pct = Math.min(100, Math.round((res.exp / state.pet.max_exp) * 100));
+      document.getElementById("exp-fill").style.width = pct + "%";
+      document.getElementById("exp-val").textContent = res.exp;
+    }
+  } catch (_) {}
+}
+
+async function addServer() {
+  const name = document.getElementById("srv-name").value.trim();
+  const addr = document.getElementById("srv-addr").value.trim();
+  const port = document.getElementById("srv-port").value;
+  const type = document.getElementById("srv-type").value;
+  if (!name || !addr) return alert("Name and address are required.");
+  try {
+    await api("POST", "/api/servers", { name, address: addr, port: port ? +port : null, type });
+    document.getElementById("srv-name").value = "";
+    document.getElementById("srv-addr").value = "";
+    document.getElementById("srv-port").value = "";
+    await poll();
+  } catch (_) {}
+}
+
+async function deleteServer(id) {
+  if (!confirm("Remove this server?")) return;
+  try {
+    await api("DELETE", `/api/servers/${id}`);
+    await poll();
+  } catch (_) {}
+}
+
+async function addTask() {
+  const input = document.getElementById("task-input");
+  const text  = input.value.trim();
+  if (!text) return;
+  try {
+    await api("POST", "/api/tasks", { task: text });
+    input.value = "";
+    await poll();
+  } catch (_) {}
+}
+
+async function completeTask(id, checkbox) {
+  checkbox.disabled = true;
+  const item = document.getElementById(`task-${id}`);
+
+  // Spawn floating EXP text toward header
+  const rect = item.getBoundingClientRect();
+  spawnFloat(rect.left + 20, rect.top, `+${20} EXP`, "floating-exp");
+
+  // Optimistic slide-out
+  item.classList.add("completing");
+
+  try {
+    await api("PUT", `/api/tasks/${id}/complete`);
+  } catch (_) {
+    item.classList.remove("completing");
+    checkbox.disabled = false;
+    checkbox.checked = false;
+    return;
+  }
+  // After animation, refresh everything
+  setTimeout(() => poll(), 400);
+}
+
+async function runBackup() {
+  const btn = document.getElementById("backup-btn");
+  btn.disabled = true;
+  btn.textContent = "RUNNING...";
+  try {
+    const res = await api("POST", "/api/pet/backup");
+    setSpeech(res.phrase);
+    triggerAnim(document.getElementById("digimon-face"), "anim-backup");
+    await poll();
+  } catch (_) {}
+  btn.disabled = false;
+  btn.textContent = "💾 FEED BACKUP";
+}
+
+/* =====================================================================
+   ESCAPE UTILITY
+===================================================================== */
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/* =====================================================================
+   BOOT
+===================================================================== */
+document.getElementById("digimon-face").addEventListener("click", petInteract);
+poll();
+setInterval(poll, 30000);
+</script>
+</body>
+</html>
