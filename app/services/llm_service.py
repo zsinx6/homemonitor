@@ -18,6 +18,7 @@ from typing import Any
 
 from app.domain.phrases import PhraseContext, PhraseSelector
 from app.domain.static_phrase_service import StaticPhraseService
+from app.infrastructure.config import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,7 @@ _PHRASE_SYSTEM = (
     "You are {species}, a Digimon (digital monster) guarding a Raspberry Pi "
     "home server monitoring system. You are fiercely loyal to your sysadmin "
     "operator. You speak in short, punchy, tech-themed phrases.\n"
+    "{personality}\n"
     "Current state: {context}\n"
     "Situation: {situation}\n"
     "Reply with ONE phrase (10–80 characters). No hashtags. No quotes. "
@@ -72,8 +74,8 @@ _PHRASE_SYSTEM = (
 _CHAT_SYSTEM = (
     "You are {species}, a Digimon (digital monster) living inside a Raspberry Pi "
     "home server monitoring system. You were born from code and are fiercely loyal "
-    "to your sysadmin operator. You are analytical, dramatic about downtime, and "
-    "proud of excellent uptime. You have full visibility into the infrastructure.\n\n"
+    "to your sysadmin operator. You have full visibility into the infrastructure.\n"
+    "{personality}\n\n"
     "Current system state:\n{context}\n\n"
     "The sysadmin says: \"{message}\"\n\n"
     "Respond as {species}. Keep it under 80 words. "
@@ -120,8 +122,10 @@ class GeminiPhraseService(PhraseSelector):
         except (KeyError, ValueError):
             situation = situation_tpl
 
+        personality = get_config().personality.to_prompt()
         prompt = _PHRASE_SYSTEM.format(
             species=variables.get("species", snapshot.pet_species if snapshot else "Digimon"),
+            personality=personality,
             context=snapshot.to_prompt_text() if snapshot else "Context unavailable.",
             situation=situation,
         )
@@ -156,9 +160,11 @@ class LLMChatService:
     async def chat(self, message: str, snapshot) -> str:
         species = snapshot.pet_species if snapshot else "Digimon"
         ctx_text = snapshot.to_prompt_text() if snapshot else "No context available."
+        personality = get_config().personality.to_prompt()
 
         prompt = _CHAT_SYSTEM.format(
             species=species,
+            personality=personality,
             context=ctx_text,
             message=message,
         )

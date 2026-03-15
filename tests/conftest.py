@@ -1,12 +1,27 @@
 """Shared test fixtures: in-memory aiosqlite DB and async HTTP client."""
 from __future__ import annotations
 
+import pytest
 import pytest_asyncio
 import aiosqlite
 from httpx import AsyncClient, ASGITransport
 
 from app.infrastructure.database import init_db
 from app.main import create_app
+
+
+@pytest.fixture(autouse=True)
+def restore_constants():
+    """Snapshot and restore app.domain.constants after each test.
+
+    This prevents load_config() calls in one test from bleeding numeric
+    overrides into subsequent tests.
+    """
+    import app.domain.constants as C  # noqa: PLC0415
+    snapshot = {k: getattr(C, k) for k in dir(C) if k.isupper() and not k.startswith("_")}
+    yield
+    for k, v in snapshot.items():
+        setattr(C, k, v)
 
 
 @pytest_asyncio.fixture

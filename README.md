@@ -33,7 +33,37 @@ Built for a Raspberry Pi Zero 2W. Runs in a browser. Optionally powered by Gemin
 
 ---
 
-## Quick start
+## First-run setup
+
+Run the interactive wizard before starting the server for the first time:
+
+```bash
+python scripts/setup.py
+```
+
+It will ask you to configure:
+- **Pet name** — what you call your Digimon (saved as `initial_name` in the config; applied once on first DB init)
+- **Personality tone** — `serious` | `sarcastic` | `cheerful` | `grumpy` | `cryptic`
+- **Backstory** — a short paragraph injected into every LLM prompt so the pet's voice is consistent
+- **Speech quirks** — catchphrases or jargon patterns that colour all responses
+- **ntfy.sh topic** — optional push notification URL
+
+The wizard writes (or updates) `digimonitor.toml`. Re-running is safe — existing values are shown as defaults.
+
+```bash
+# Update config at any time
+python scripts/setup.py
+
+# Use a custom path
+python scripts/setup.py --config /etc/digimonitor.toml
+```
+
+> **Gemini API key** is intentionally not stored in the file — set it as an environment variable instead:
+> `export GEMINI_API_KEY=your_key_here`
+
+---
+
+
 
 ```bash
 git clone https://github.com/yourname/homemonitor
@@ -227,6 +257,13 @@ interval_seconds = 60
 http_timeout_seconds = 10
 ping_timeout_seconds = 3
 
+[personality]
+# Easiest to set via: python scripts/setup.py
+initial_name = "Sparky"              # applied once on first DB init
+tone = "sarcastic"                   # serious | sarcastic | cheerful | grumpy | cryptic
+backstory = "Born from a kernel panic at 3am, hardened by years of silent uptime."
+quirks = "References Linux kernel internals. Uses syscall names as expressions."
+
 [notifications]
 # ntfy.sh push notifications — leave empty to disable
 ntfy_topic = "https://ntfy.sh/my-homelab-alerts"
@@ -248,7 +285,7 @@ Individual constants can also still be edited in `app/domain/constants.py`.
 # Install
 pip install -r requirements.txt
 
-# Run tests (273 tests, ~3 s)
+# Run tests (287 tests, ~3 s)
 pytest
 
 # Run with auto-reload
@@ -270,8 +307,10 @@ app/
   main.py           # App factory + lifespan (DB init, worker start, config load)
   worker.py         # Background monitor loop (asyncio, 60 s interval)
   infrastructure/
-    config.py       # TOML config loader — overrides constants + ntfy settings
+    config.py       # TOML config loader — overrides constants + personality + ntfy settings
     notifier.py     # ntfy.sh push notification client
+scripts/
+  setup.py          # Interactive first-run wizard — writes digimonitor.toml
 static/
   index.html        # Single-file SPA — no build step, NES.css pixel theme
 tests/

@@ -852,3 +852,46 @@ class TestExportImport:
         assert weird is not None
         assert weird["type"] == "http"
 
+
+
+class TestInitialPetName:
+    """apply_initial_name_async sets the pet name from config on first start."""
+
+    async def test_initial_name_applied_when_default(self, tmp_path):
+        """If config has initial_name and pet is still 'Bitmon', name is updated."""
+        import aiosqlite
+        from app.infrastructure.config import load_config
+        from app.infrastructure.database import init_db, apply_initial_name_async
+
+        toml = tmp_path / "cfg.toml"
+        toml.write_text('[personality]\ninitial_name = "Sparky"\n', encoding="utf-8")
+        load_config(toml)
+
+        async with aiosqlite.connect(":memory:") as db:
+            db.row_factory = aiosqlite.Row
+            await init_db(db)
+            await apply_initial_name_async(db)
+            async with db.execute("SELECT name FROM pet_state WHERE id=1") as cur:
+                row = await cur.fetchone()
+            assert row["name"] == "Sparky"
+
+    async def test_initial_name_not_overwrite_custom_name(self, tmp_path):
+        """If user already renamed the pet, initial_name is a no-op."""
+        import aiosqlite
+        from app.infrastructure.config import load_config
+        from app.infrastructure.database import init_db, apply_initial_name_async
+
+        toml = tmp_path / "cfg2.toml"
+        toml.write_text('[personality]\ninitial_name = "Ghost"\n', encoding="utf-8")
+        load_config(toml)
+
+        async with aiosqlite.connect(":memory:") as db:
+            db.row_factory = aiosqlite.Row
+            await init_db(db)
+            # Simulate user rename
+            await db.execute("UPDATE pet_state SET name='Kraken' WHERE id=1")
+            await db.commit()
+            await apply_initial_name_async(db)
+            async with db.execute("SELECT name FROM pet_state WHERE id=1") as cur:
+                row = await cur.fetchone()
+            assert row["name"] == "Kraken"  # user rename preserved

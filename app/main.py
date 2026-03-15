@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.infrastructure.config import load_config
-from app.infrastructure.database import init_db
+from app.infrastructure.database import apply_initial_name_async, init_db
 from app.worker import monitor_loop
 
 logger = logging.getLogger(__name__)
@@ -29,6 +29,7 @@ def create_app(db_path: str = DB_PATH) -> FastAPI:
         # Startup: init DB and start background worker using the captured db_path
         async with aiosqlite.connect(db_path) as db:
             await init_db(db)
+            await apply_initial_name_async(db)
 
         task = asyncio.create_task(monitor_loop(db_path))
         app.state.monitor_task = task

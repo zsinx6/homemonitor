@@ -80,6 +80,26 @@ VALUES (1, 'Bitmon', 1, 0, 100, 10, datetime('now', '-1 hour'), datetime('now'))
 """
 
 
+async def apply_initial_name_async(db: aiosqlite.Connection) -> None:
+    """Apply the configured initial_name to the pet if it still has the default name.
+
+    Called once at startup after init_db(). Safe to call on every restart —
+    only renames if the current name is the default 'Bitmon' seed value.
+    """
+    try:
+        from app.infrastructure.config import get_config  # noqa: PLC0415
+        initial_name = get_config().personality.initial_name
+    except Exception:
+        return
+    if not initial_name:
+        return
+    await db.execute(
+        "UPDATE pet_state SET name = ? WHERE id = 1 AND name = 'Bitmon'",
+        (initial_name,),
+    )
+    await db.commit()
+
+
 async def init_db(db: aiosqlite.Connection) -> None:
     """Create schema and seed the default pet row (idempotent)."""
     await db.executescript(_SCHEMA_SQL)
