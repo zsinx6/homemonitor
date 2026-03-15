@@ -1,6 +1,7 @@
 """Export / import routes for full data backup and restore."""
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -46,6 +47,7 @@ async def export_data(db: aiosqlite.Connection = Depends(get_db)) -> dict[str, A
                 "port": s.port,
                 "type": s.type,
                 "position": s.position,
+                "check_params": s.check_params,
             }
             for s in servers
         ],
@@ -97,13 +99,16 @@ async def import_data(
             address = (s.get("address") or "").strip()
             srv_type = s.get("type", "http")
             port = s.get("port")
+            check_params = s.get("check_params")
             if not name or not address:
                 continue
-            if srv_type not in ("http", "ping"):
+            if srv_type not in ("http", "ping", "tcp", "http_keyword"):
                 srv_type = "http"
+            params_json = json.dumps(check_params) if check_params else None
             await db.execute(
-                "INSERT INTO servers (name, address, port, type, position) VALUES (?, ?, ?, ?, ?)",
-                (name, address, port, srv_type, i),
+                "INSERT INTO servers (name, address, port, type, position, check_params)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (name, address, port, srv_type, i, params_json),
             )
             imported_servers += 1
         await db.commit()

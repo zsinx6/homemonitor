@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -73,6 +73,7 @@ class ServerOut(BaseModel):
     daily_stats: list[DailyStatOut] = Field(default_factory=list)
     maintenance_mode: bool = False
     position: int = 0
+    check_params: Optional[dict] = None
 
 
 class _ServerBase(BaseModel):
@@ -80,7 +81,8 @@ class _ServerBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     address: str = Field(..., min_length=1, max_length=500)
     port: Optional[int] = Field(None, ge=1, le=65535)
-    type: str = Field(..., pattern="^(http|ping)$")
+    type: str = Field(..., pattern="^(http|ping|tcp|http_keyword)$")
+    check_params: Optional[dict[str, Any]] = None
 
     @field_validator("name", "address", mode="before")
     @classmethod
@@ -91,13 +93,23 @@ class _ServerBase(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def validate_ping_address(self):
-        if self.type == "ping" and "://" in self.address:
+    def validate_type_params(self):
+        if self.type in ("ping", "tcp") and "://" in self.address:
             raise ValueError(
-                "Ping address must be a hostname or IP — remove the URL scheme (e.g. http://)"
+                f"{self.type.upper()} address must be a hostname or IP"
+                " — remove the URL scheme (e.g. http://)"
             )
         if self.type == "ping" and self.port is not None:
             raise ValueError("Ping checks do not use ports — remove the port value")
+        if self.type == "tcp" and self.port is None:
+            raise ValueError("TCP check requires a port number")
+        if self.type == "http_keyword":
+            keyword = str((self.check_params or {}).get("keyword", "")).strip()
+            if not keyword:
+                raise ValueError(
+                    "http_keyword check requires check_params.keyword"
+                    " — e.g. {\"keyword\": \"OK\"}"
+                )
         return self
 
 

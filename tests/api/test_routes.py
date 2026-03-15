@@ -893,6 +893,68 @@ class TestServerValidation:
         })
         assert r.status_code == 422
 
+    async def test_tcp_type_requires_port(self, client):
+        """POST /servers with type=tcp but no port returns 422."""
+        r = await client.post("/api/servers", json={
+            "name": "redis", "address": "192.168.1.5", "type": "tcp"
+        })
+        assert r.status_code == 422
+
+    async def test_tcp_type_with_port_accepted(self, client):
+        """POST /servers with type=tcp and a port is accepted."""
+        r = await client.post("/api/servers", json={
+            "name": "redis", "address": "192.168.1.5", "type": "tcp", "port": 6379
+        })
+        assert r.status_code == 201
+        assert r.json()["type"] == "tcp"
+
+    async def test_tcp_rejects_url_address(self, client):
+        """POST /servers with type=tcp and a URL-format address returns 422."""
+        r = await client.post("/api/servers", json={
+            "name": "tcp-srv", "address": "http://192.168.1.5", "type": "tcp", "port": 8080
+        })
+        assert r.status_code == 422
+
+    async def test_http_keyword_without_keyword_rejected(self, client):
+        """POST /servers with type=http_keyword but no keyword returns 422."""
+        r = await client.post("/api/servers", json={
+            "name": "site", "address": "http://example.com", "type": "http_keyword"
+        })
+        assert r.status_code == 422
+
+    async def test_http_keyword_with_empty_keyword_rejected(self, client):
+        """POST /servers with type=http_keyword and blank keyword returns 422."""
+        r = await client.post("/api/servers", json={
+            "name": "site", "address": "http://example.com",
+            "type": "http_keyword", "check_params": {"keyword": "   "}
+        })
+        assert r.status_code == 422
+
+    async def test_http_keyword_with_keyword_accepted(self, client):
+        """POST /servers with type=http_keyword and a keyword is accepted."""
+        r = await client.post("/api/servers", json={
+            "name": "site", "address": "http://example.com",
+            "type": "http_keyword",
+            "check_params": {"keyword": "Python"}
+        })
+        assert r.status_code == 201
+        data = r.json()
+        assert data["type"] == "http_keyword"
+        assert data["check_params"]["keyword"] == "Python"
+
+    async def test_check_params_persisted_and_returned(self, client):
+        """check_params are persisted and returned in subsequent GET."""
+        await client.post("/api/servers", json={
+            "name": "kw-site", "address": "http://example.com",
+            "type": "http_keyword",
+            "check_params": {"keyword": "OK"}
+        })
+        r = await client.get("/api/servers")
+        servers = r.json()
+        kw_srv = next((s for s in servers if s["name"] == "kw-site"), None)
+        assert kw_srv is not None
+        assert kw_srv["check_params"]["keyword"] == "OK"
+
 
 class TestTaskValidation:
     """Additional task input validation edge cases."""

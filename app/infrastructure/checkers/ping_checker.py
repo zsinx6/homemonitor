@@ -16,6 +16,7 @@ class PingChecker(ServerChecker):
         name: str,
         address: str,
         port: int | None,  # ignored for ICMP ping
+        check_params: dict | None = None,  # ignored for ping
     ) -> ServerCheckResult:
         # Platform-specific ping flags
         if sys.platform == "win32":

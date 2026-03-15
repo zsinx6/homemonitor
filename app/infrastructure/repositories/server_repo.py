@@ -1,6 +1,7 @@
 """Server repository — async DB read/write for servers and server_daily_stats."""
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
@@ -25,6 +26,7 @@ class ServerRow:
     last_checked: Optional[datetime]
     maintenance_mode: bool = False
     position: int = 0
+    check_params: Optional[dict] = None
 
 
 @dataclass
@@ -36,6 +38,7 @@ class DailyStatRow:
 
 
 def _row_to_server(row: aiosqlite.Row) -> ServerRow:
+    raw_params = row["check_params"] if "check_params" in row.keys() else None
     return ServerRow(
         id=row["id"],
         name=row["name"],
@@ -50,6 +53,7 @@ def _row_to_server(row: aiosqlite.Row) -> ServerRow:
         last_checked=parse_datetime(row["last_checked"]),
         maintenance_mode=bool(row["maintenance_mode"]),
         position=row["position"] if "position" in row.keys() else 0,
+        check_params=json.loads(raw_params) if raw_params else None,
     )
 
 
@@ -73,14 +77,17 @@ async def create_server(
     address: str,
     port: Optional[int],
     server_type: str,
+    check_params: Optional[dict] = None,
 ) -> ServerRow:
     # New servers go to the end of the list
     async with db.execute("SELECT COALESCE(MAX(position), 0) + 1 FROM servers") as cur:
         row = await cur.fetchone()
         next_pos = row[0] if row else 1
+    params_json = json.dumps(check_params) if check_params else None
     async with db.execute(
-        "INSERT INTO servers (name, address, port, type, position) VALUES (?, ?, ?, ?, ?)",
-        (name, address, port, server_type, next_pos),
+        "INSERT INTO servers (name, address, port, type, position, check_params)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        (name, address, port, server_type, next_pos, params_json),
     ) as cur:
         server_id = cur.lastrowid
     await db.commit()
@@ -94,10 +101,12 @@ async def update_server(
     address: str,
     port: Optional[int],
     server_type: str,
+    check_params: Optional[dict] = None,
 ) -> Optional[ServerRow]:
+    params_json = json.dumps(check_params) if check_params else None
     await db.execute(
-        "UPDATE servers SET name=?, address=?, port=?, type=? WHERE id=?",
-        (name, address, port, server_type, server_id),
+        "UPDATE servers SET name=?, address=?, port=?, type=?, check_params=? WHERE id=?",
+        (name, address, port, server_type, params_json, server_id),
     )
     await db.commit()
     return await get_server(db, server_id)

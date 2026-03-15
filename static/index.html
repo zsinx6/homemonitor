@@ -650,17 +650,23 @@
       <input id="srv-addr" type="text" class="nes-input" placeholder="https://example.com" maxlength="500">
     </div>
     <div class="form-row">
-      <label class="form-label" for="srv-port">PORT (optional)</label>
+      <label class="form-label" for="srv-port">PORT (optional; required for TCP)</label>
       <input id="srv-port" type="number" class="nes-input" placeholder="80" min="1" max="65535">
     </div>
     <div class="form-row">
       <label class="form-label" for="srv-type">TYPE</label>
       <div class="nes-select">
-        <select id="srv-type">
-          <option value="http">HTTP</option>
-          <option value="ping">PING</option>
+        <select id="srv-type" onchange="onSrvTypeChange('srv')">
+          <option value="http">HTTP (2xx status)</option>
+          <option value="http_keyword">HTTP + KEYWORD</option>
+          <option value="tcp">TCP PORT</option>
+          <option value="ping">PING (ICMP)</option>
         </select>
       </div>
+    </div>
+    <div class="form-row" id="srv-keyword-row" style="display:none">
+      <label class="form-label" for="srv-keyword">KEYWORD (must appear in response)</label>
+      <input id="srv-keyword" type="text" class="nes-input" placeholder="OK" maxlength="200">
     </div>
     <div id="srv-error" class="form-error" role="alert" aria-live="polite"></div>
     <button class="nes-btn is-primary" onclick="addServer()">ADD SERVER</button>
@@ -783,17 +789,23 @@
       <input id="edit-srv-addr" type="text" class="nes-input" placeholder="https://example.com" maxlength="500">
     </div>
     <div class="form-row">
-      <label class="form-label" for="edit-srv-port">PORT (optional)</label>
+      <label class="form-label" for="edit-srv-port">PORT (optional; required for TCP)</label>
       <input id="edit-srv-port" type="number" class="nes-input" placeholder="80" min="1" max="65535">
     </div>
     <div class="form-row">
       <label class="form-label" for="edit-srv-type">TYPE</label>
       <div class="nes-select">
-        <select id="edit-srv-type">
-          <option value="http">HTTP</option>
-          <option value="ping">PING</option>
+        <select id="edit-srv-type" onchange="onSrvTypeChange('edit-srv')">
+          <option value="http">HTTP (2xx status)</option>
+          <option value="http_keyword">HTTP + KEYWORD</option>
+          <option value="tcp">TCP PORT</option>
+          <option value="ping">PING (ICMP)</option>
         </select>
       </div>
+    </div>
+    <div class="form-row" id="edit-srv-keyword-row" style="display:none">
+      <label class="form-label" for="edit-srv-keyword">KEYWORD (must appear in response)</label>
+      <input id="edit-srv-keyword" type="text" class="nes-input" placeholder="OK" maxlength="200">
     </div>
     <div id="edit-srv-error" class="form-error" role="alert"></div>
     <div style="display:flex;gap:8px;margin-top:12px">
@@ -1321,19 +1333,31 @@ async function petInteract(event) {
   } catch (_) {}
 }
 
+// Show/hide type-specific fields (keyword for http_keyword) when type dropdown changes.
+// prefix: "srv" for the add form, "edit-srv" for the edit form.
+function onSrvTypeChange(prefix) {
+  const type = document.getElementById(prefix + "-type").value;
+  const kwRow = document.getElementById(prefix + "-keyword-row");
+  if (kwRow) kwRow.style.display = (type === "http_keyword") ? "" : "none";
+}
+
 async function addServer() {
   const name = document.getElementById("srv-name").value.trim();
   const addr = document.getElementById("srv-addr").value.trim();
   const port = document.getElementById("srv-port").value;
   const type = document.getElementById("srv-type").value;
+  const keyword = document.getElementById("srv-keyword").value.trim();
   const errEl = document.getElementById("srv-error");
   errEl.textContent = "";
   if (!name || !addr) { errEl.textContent = "Name and address are required."; return; }
+  const body = { name, address: addr, port: port ? +port : null, type };
+  if (type === "http_keyword") body.check_params = { keyword };
   try {
-    await api("POST", "/api/servers", { name, address: addr, port: port ? +port : null, type });
+    await api("POST", "/api/servers", body);
     document.getElementById("srv-name").value = "";
     document.getElementById("srv-addr").value = "";
     document.getElementById("srv-port").value = "";
+    document.getElementById("srv-keyword").value = "";
     await poll();
   } catch (e) {
     if (e.isValidation) errEl.textContent = e.message;
@@ -1370,6 +1394,9 @@ function openEditServer(id) {
   document.getElementById("edit-srv-addr").value  = srv.address;
   document.getElementById("edit-srv-port").value  = srv.port || "";
   document.getElementById("edit-srv-type").value  = srv.type;
+  document.getElementById("edit-srv-keyword").value =
+    (srv.check_params && srv.check_params.keyword) ? srv.check_params.keyword : "";
+  onSrvTypeChange("edit-srv");
   document.getElementById("edit-srv-error").textContent = "";
   document.getElementById("edit-server-overlay").style.display = "block";
   document.getElementById("edit-srv-name").focus();
@@ -1385,11 +1412,13 @@ async function saveServerEdit() {
   const address = document.getElementById("edit-srv-addr").value.trim();
   const portVal = document.getElementById("edit-srv-port").value.trim();
   const type    = document.getElementById("edit-srv-type").value;
+  const keyword = document.getElementById("edit-srv-keyword").value.trim();
   const errEl   = document.getElementById("edit-srv-error");
   errEl.textContent = "";
   if (!name || !address) { errEl.textContent = "Name and address are required."; return; }
   const body = { name, address, type };
   if (portVal) body.port = parseInt(portVal);
+  if (type === "http_keyword") body.check_params = { keyword };
   try {
     await api("PUT", `/api/servers/${id}`, body);
     closeEditServer();

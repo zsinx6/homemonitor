@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS servers (
     name              TEXT    NOT NULL,
     address           TEXT    NOT NULL,
     port              INTEGER,
-    type              TEXT    NOT NULL CHECK(type IN ('http', 'ping')),
+    type              TEXT    NOT NULL CHECK(type IN ('http', 'ping', 'tcp', 'http_keyword')),
     status            TEXT    NOT NULL DEFAULT 'UP' CHECK(status IN ('UP', 'DOWN')),
     uptime_percent    REAL    NOT NULL DEFAULT 100.0,
     total_checks      INTEGER NOT NULL DEFAULT 0,
@@ -41,7 +41,8 @@ CREATE TABLE IF NOT EXISTS servers (
     last_error        TEXT,
     last_checked      TEXT,
     maintenance_mode  INTEGER NOT NULL DEFAULT 0,
-    position          INTEGER NOT NULL DEFAULT 0
+    position          INTEGER NOT NULL DEFAULT 0,
+    check_params      TEXT
 );
 
 CREATE TABLE IF NOT EXISTS server_daily_stats (
@@ -141,3 +142,55 @@ async def init_db(db: aiosqlite.Connection) -> None:
         await db.commit()
     except aiosqlite.OperationalError:
         logger.debug("Migration skip: priority column already exists")
+    # Migration: rebuild servers table to support new check types and add check_params column.
+    # We detect the old schema by checking its DDL for the restricted type CHECK constraint.
+    try:
+        async with db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='servers'"
+        ) as cur:
+            row = await cur.fetchone()
+        table_sql = row[0] if row else ""
+        if "'http', 'ping'" in table_sql:
+            # Disable FK enforcement during table rebuild to avoid constraint errors
+            await db.execute("PRAGMA foreign_keys = OFF")
+            await db.execute("ALTER TABLE servers RENAME TO _servers_v1")
+            await db.execute("""
+                CREATE TABLE servers (
+                    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name              TEXT    NOT NULL,
+                    address           TEXT    NOT NULL,
+                    port              INTEGER,
+                    type              TEXT    NOT NULL
+                                      CHECK(type IN ('http', 'ping', 'tcp', 'http_keyword')),
+                    status            TEXT    NOT NULL DEFAULT 'UP'
+                                      CHECK(status IN ('UP', 'DOWN')),
+                    uptime_percent    REAL    NOT NULL DEFAULT 100.0,
+                    total_checks      INTEGER NOT NULL DEFAULT 0,
+                    successful_checks INTEGER NOT NULL DEFAULT 0,
+                    last_error        TEXT,
+                    last_checked      TEXT,
+                    maintenance_mode  INTEGER NOT NULL DEFAULT 0,
+                    position          INTEGER NOT NULL DEFAULT 0,
+                    check_params      TEXT
+                )
+            """)
+            await db.execute("""
+                INSERT INTO servers
+                SELECT id, name, address, port, type, status, uptime_percent,
+                       total_checks, successful_checks, last_error, last_checked,
+                       maintenance_mode, position, NULL
+                FROM _servers_v1
+            """)
+            await db.execute("DROP TABLE _servers_v1")
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_servers_status ON servers(status)"
+            )
+            await db.execute("PRAGMA foreign_keys = ON")
+            await db.commit()
+            logger.debug("Migration done: servers table rebuilt with new check types + check_params")
+    except Exception as exc:
+        logger.warning("Migration (servers rebuild) failed: %s", exc)
+        try:
+            await db.execute("PRAGMA foreign_keys = ON")
+        except Exception:
+            pass

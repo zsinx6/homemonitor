@@ -21,21 +21,28 @@ class MonitorService:
         self,
         pet_repo,
         server_repo,
-        http_checker: ServerChecker,
-        ping_checker: ServerChecker,
+        http_checker: ServerChecker | None = None,
+        ping_checker: ServerChecker | None = None,
         memory_repo=None,
         notifier: Optional[NtfyNotifier] = None,
         notify_on_recovery: bool = False,
         notify_on_death: bool = True,
+        checker_registry: dict[str, ServerChecker] | None = None,
     ) -> None:
         self._pet_repo = pet_repo
         self._server_repo = server_repo
-        self._http_checker = http_checker
-        self._ping_checker = ping_checker
         self._memory_repo = memory_repo
         self._notifier = notifier
         self._notify_on_recovery = notify_on_recovery
         self._notify_on_death = notify_on_death
+        # Build unified registry from explicit registry + legacy checkers
+        self._checker_registry: dict[str, ServerChecker] = {}
+        if checker_registry:
+            self._checker_registry.update(checker_registry)
+        if http_checker is not None:
+            self._checker_registry.setdefault("http", http_checker)
+        if ping_checker is not None:
+            self._checker_registry.setdefault("ping", ping_checker)
 
     async def _record(self, db, event_type: str, detail=None) -> None:
         if self._memory_repo:
@@ -50,7 +57,7 @@ class MonitorService:
         maintenance_ids = {s.id for s in servers if s.maintenance_mode}
 
         tasks = [
-            self._check_server(s.id, s.name, s.address, s.port, s.type)
+            self._check_server(s.id, s.name, s.address, s.port, s.type, s.check_params)
             for s in servers
         ]
         results: list[ServerCheckResult] = await asyncio.gather(*tasks)
@@ -146,10 +153,15 @@ class MonitorService:
         address: str,
         port,
         server_type: str,
+        check_params: dict | None = None,
     ) -> ServerCheckResult:
-        checker = self._http_checker if server_type == "http" else self._ping_checker
+        checker = self._checker_registry.get(server_type) or self._checker_registry.get("http")
+        if checker is None:
+            logger.warning("No checker found for type %r (server %r)", server_type, name)
+            return ServerCheckResult(server_id=server_id, name=name, is_up=False,
+                                     error=f"No checker registered for type '{server_type}'")
         try:
-            return await checker.check(server_id, name, address, port)
+            return await checker.check(server_id, name, address, port, check_params)
         except Exception as exc:
             logger.warning("Checker raised for server %r (%s): %s", name, server_id, exc)
             return ServerCheckResult(server_id=server_id, name=name, is_up=False, error=str(exc))

@@ -29,6 +29,7 @@ async def _server_with_stats(db, srv) -> ServerOut:
         last_checked=srv.last_checked,
         maintenance_mode=srv.maintenance_mode,
         position=srv.position,
+        check_params=srv.check_params,
         daily_stats=[
             DailyStatOut(
                 date=d.date,
@@ -52,7 +53,9 @@ async def create_server(
     body: ServerCreate,
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    srv = await server_repo.create_server(db, body.name, body.address, body.port, body.type)
+    srv = await server_repo.create_server(
+        db, body.name, body.address, body.port, body.type, body.check_params
+    )
     return await _server_with_stats(db, srv)
 
 
@@ -62,7 +65,9 @@ async def update_server(
     body: ServerUpdate,
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    srv = await server_repo.update_server(db, server_id, body.name, body.address, body.port, body.type)
+    srv = await server_repo.update_server(
+        db, server_id, body.name, body.address, body.port, body.type, body.check_params
+    )
     if srv is None:
         raise HTTPException(status_code=404, detail="Server not found")
     return await _server_with_stats(db, srv)

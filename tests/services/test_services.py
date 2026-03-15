@@ -97,6 +97,7 @@ class FakeServer:
     type: str
     status: str = "UP"
     maintenance_mode: bool = False
+    check_params: Optional[dict] = None
 
 
 @dataclass
@@ -129,7 +130,7 @@ class TestMonitorService:
         # Override check to return specific results
         result_map = {r.server_id: r for r in check_results}
 
-        async def mock_check(server_id, name, address, port):
+        async def mock_check(server_id, name, address, port, check_params=None):
             return result_map.get(server_id, ServerCheckResult(server_id, name, True, None))
 
         checkers["http"].check = mock_check
@@ -453,7 +454,7 @@ class TestMonitorServiceMaintenanceRecovery:
         server_repo_inst = MockServerRepo(servers=servers)
         result_map = {r.server_id: r for r in check_results}
 
-        async def mock_check(server_id, name, address, port):
+        async def mock_check(server_id, name, address, port, check_params=None):
             return result_map.get(server_id, ServerCheckResult(server_id, name, True, None))
 
         from unittest.mock import MagicMock
@@ -563,7 +564,7 @@ class TestMonitorServiceMemoryRecording:
         server_repo_inst = MockServerRepo(servers=servers)
         result_map = {r.server_id: r for r in check_results}
 
-        async def mock_check(server_id, name, address, port):
+        async def mock_check(server_id, name, address, port, check_params=None):
             return result_map.get(server_id, ServerCheckResult(server_id, name, True, None))
 
         from unittest.mock import MagicMock
@@ -720,7 +721,7 @@ class TestMonitorServiceCheckerException:
         pet_repo = MockPetRepo(pet=_default_pet())
         server_repo = MockServerRepo(servers=servers)
 
-        async def failing_check(server_id, name, address, port):
+        async def failing_check(server_id, name, address, port, check_params=None):
             raise RuntimeError("network unreachable")
 
         from unittest.mock import MagicMock
@@ -745,3 +746,194 @@ class TestMonitorServiceCheckerException:
         await svc.run_cycle(db=None)
         # Server treated as DOWN → HP should decrease
         assert pet_repo.pet.hp < C.HP_MAX
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TcpChecker unit tests
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.asyncio
+class TestTcpChecker:
+    async def test_no_port_returns_down(self):
+        from app.infrastructure.checkers.tcp_checker import TcpChecker
+        checker = TcpChecker()
+        result = await checker.check(1, "db", "192.168.1.1", None)
+        assert not result.is_up
+        assert "port" in result.error.lower()
+
+    async def test_connection_refused_returns_down(self):
+        """Connecting to a closed port should return DOWN."""
+        from app.infrastructure.checkers.tcp_checker import TcpChecker
+        checker = TcpChecker()
+        # Port 1 is almost certainly closed/refused
+        result = await checker.check(1, "test", "127.0.0.1", 1)
+        assert not result.is_up
+
+    async def test_successful_connection_returns_up(self):
+        """A listening server should return UP."""
+        import asyncio
+        from app.infrastructure.checkers.tcp_checker import TcpChecker
+
+        async def _echo_handler(reader, writer):
+            writer.close()
+
+        server = await asyncio.start_server(_echo_handler, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        async with server:
+            checker = TcpChecker()
+            result = await checker.check(1, "test", "127.0.0.1", port)
+        assert result.is_up
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HttpKeywordChecker unit tests
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.asyncio
+class TestHttpKeywordChecker:
+    async def test_keyword_found_returns_up(self):
+        from unittest.mock import patch, AsyncMock, MagicMock
+        from app.infrastructure.checkers.http_keyword_checker import HttpKeywordChecker
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = "Welcome to Python"
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        with patch("app.infrastructure.checkers.http_keyword_checker.httpx.AsyncClient",
+                   return_value=mock_client):
+            checker = HttpKeywordChecker()
+            result = await checker.check(1, "site", "http://example.com", None,
+                                         check_params={"keyword": "Python"})
+        assert result.is_up
+
+    async def test_keyword_not_found_returns_down(self):
+        from unittest.mock import patch, AsyncMock, MagicMock
+        from app.infrastructure.checkers.http_keyword_checker import HttpKeywordChecker
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = "Under construction"
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        with patch("app.infrastructure.checkers.http_keyword_checker.httpx.AsyncClient",
+                   return_value=mock_client):
+            checker = HttpKeywordChecker()
+            result = await checker.check(1, "site", "http://example.com", None,
+                                         check_params={"keyword": "Python"})
+        assert not result.is_up
+        assert "Python" in result.error
+
+    async def test_http_error_returns_down(self):
+        from unittest.mock import patch, AsyncMock, MagicMock
+        from app.infrastructure.checkers.http_keyword_checker import HttpKeywordChecker
+
+        mock_response = MagicMock()
+        mock_response.status_code = 503
+        mock_response.text = "Service unavailable"
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        with patch("app.infrastructure.checkers.http_keyword_checker.httpx.AsyncClient",
+                   return_value=mock_client):
+            checker = HttpKeywordChecker()
+            result = await checker.check(1, "site", "http://example.com", None,
+                                         check_params={"keyword": "OK"})
+        assert not result.is_up
+        assert "503" in result.error
+
+    async def test_case_insensitive_match(self):
+        from unittest.mock import patch, AsyncMock, MagicMock
+        from app.infrastructure.checkers.http_keyword_checker import HttpKeywordChecker
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = "PYTHON IS GREAT"
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        with patch("app.infrastructure.checkers.http_keyword_checker.httpx.AsyncClient",
+                   return_value=mock_client):
+            checker = HttpKeywordChecker()
+            result = await checker.check(1, "site", "http://example.com", None,
+                                         check_params={"keyword": "python"})
+        assert result.is_up
+
+    async def test_no_keyword_accepts_any_2xx(self):
+        from unittest.mock import patch, AsyncMock, MagicMock
+        from app.infrastructure.checkers.http_keyword_checker import HttpKeywordChecker
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = "anything"
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        with patch("app.infrastructure.checkers.http_keyword_checker.httpx.AsyncClient",
+                   return_value=mock_client):
+            checker = HttpKeywordChecker()
+            result = await checker.check(1, "site", "http://example.com", None,
+                                         check_params={})
+        assert result.is_up
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HttpChecker: expected_status param
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.asyncio
+class TestHttpCheckerCheckParams:
+    async def test_expected_status_match(self):
+        from unittest.mock import patch, AsyncMock, MagicMock
+        from app.infrastructure.checkers.http_checker import HttpChecker
+
+        mock_response = MagicMock()
+        mock_response.status_code = 301
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        with patch("app.infrastructure.checkers.http_checker.httpx.AsyncClient",
+                   return_value=mock_client):
+            checker = HttpChecker()
+            result = await checker.check(1, "site", "http://example.com", None,
+                                         check_params={"expected_status": [200, 301]})
+        assert result.is_up
+
+    async def test_expected_status_mismatch_returns_down(self):
+        from unittest.mock import patch, AsyncMock, MagicMock
+        from app.infrastructure.checkers.http_checker import HttpChecker
+
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        with patch("app.infrastructure.checkers.http_checker.httpx.AsyncClient",
+                   return_value=mock_client):
+            checker = HttpChecker()
+            result = await checker.check(1, "site", "http://example.com", None,
+                                         check_params={"expected_status": [200, 201]})
+        assert not result.is_up

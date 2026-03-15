@@ -16,6 +16,7 @@ class HttpChecker(ServerChecker):
         name: str,
         address: str,
         port: int | None,
+        check_params: dict | None = None,
     ) -> ServerCheckResult:
         url = address
         if port:
@@ -30,7 +31,12 @@ class HttpChecker(ServerChecker):
                 timeout=C.HTTP_TIMEOUT_SECONDS, follow_redirects=True
             ) as client:
                 response = await client.get(url)
-            is_up = 200 <= response.status_code < 300
+            # Allow caller to specify acceptable status codes via check_params
+            expected = (check_params or {}).get("expected_status")
+            if expected is not None:
+                is_up = response.status_code in expected
+            else:
+                is_up = 200 <= response.status_code < 300
             error = None if is_up else f"HTTP {response.status_code}"
         except Exception as exc:
             is_up = False
