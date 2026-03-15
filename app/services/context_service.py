@@ -147,7 +147,7 @@ async def build_snapshot(db: aiosqlite.Connection) -> ContextSnapshot:
     down_names = [s.name for s in servers if s.status == "DOWN" and not s.maintenance_mode]
 
     overall_uptime = (
-        sum(s.uptime_percent for s in servers) / len(servers) if servers else 100.0
+        sum(s.uptime_percent for s in servers) / len(servers) if servers else 0.0
     )
 
     tasks_pending = sum(1 for t in tasks if not t.is_completed)

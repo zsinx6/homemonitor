@@ -122,7 +122,10 @@ def apply_monitor_cycle(
     if any_down:
         total_loss = len(down_server_names) * C.HP_LOSS_PER_DOWN_CYCLE
         new_hp = _clamp(updated.hp - total_loss, C.HP_MIN, C.HP_MAX)
-        updated = replace(updated, hp=new_hp, last_event=f"server_down:{down_server_names[0]}")
+        names_str = ", ".join(down_server_names[:3])
+        if len(down_server_names) > 3:
+            names_str += f" (+{len(down_server_names) - 3} more)"
+        updated = replace(updated, hp=new_hp, last_event=f"server_down:{names_str}")
 
     # HP recovery from servers that came back up
     if recovered_server_names:

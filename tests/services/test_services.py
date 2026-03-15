@@ -337,3 +337,149 @@ class TestTaskService:
         service, pet_repo, _ = self._make_service(tasks=[task])
         await service.complete_task(db=self._mock_db(), task_id=1)
         assert pet_repo.pet.last_event == "task_done"
+
+
+# ---------------------------------------------------------------------------
+# Domain edge case tests
+# ---------------------------------------------------------------------------
+
+class TestPetDomainEdgeCases:
+    def _base_pet(self, **kwargs):
+        return _default_pet(**kwargs)
+
+    def test_multiple_servers_down_event_encodes_all_names(self):
+        """All down server names should appear in the last_event (up to 3)."""
+        from app.domain.pet import apply_monitor_cycle
+        pet = self._base_pet()
+        updated = apply_monitor_cycle(
+            pet,
+            down_server_names=["db", "cache", "nginx"],
+            recovered_server_names=[],
+        )
+        assert updated.last_event is not None
+        assert updated.last_event.startswith("server_down:")
+        detail = updated.last_event.split(":", 1)[1]
+        assert "db" in detail
+        assert "cache" in detail
+        assert "nginx" in detail
+
+    def test_four_plus_servers_down_shows_overflow(self):
+        """With 4+ servers down, the detail should mention overflow count."""
+        from app.domain.pet import apply_monitor_cycle
+        pet = self._base_pet()
+        updated = apply_monitor_cycle(
+            pet,
+            down_server_names=["a", "b", "c", "d"],
+            recovered_server_names=[],
+        )
+        detail = updated.last_event.split(":", 1)[1]
+        assert "+1 more" in detail
+
+    def test_single_server_down_event_has_name(self):
+        """Single server down: event detail is just the server name."""
+        from app.domain.pet import apply_monitor_cycle
+        pet = self._base_pet()
+        updated = apply_monitor_cycle(
+            pet,
+            down_server_names=["redis"],
+            recovered_server_names=[],
+        )
+        assert updated.last_event == "server_down:redis"
+
+    def test_hp_drain_scales_with_server_count(self):
+        """Three servers down should drain 3x HP_LOSS_PER_DOWN_CYCLE per cycle."""
+        from app.domain.pet import apply_monitor_cycle
+        pet = self._base_pet(hp=C.HP_MAX)
+        updated = apply_monitor_cycle(
+            pet,
+            down_server_names=["a", "b", "c"],
+            recovered_server_names=[],
+        )
+        expected_hp = max(0, C.HP_MAX - 3 * C.HP_LOSS_PER_DOWN_CYCLE)
+        assert updated.hp == expected_hp
+
+    def test_dead_pet_frozen_during_monitor_cycle(self):
+        """A dead pet should not gain or lose HP/EXP during a monitor cycle."""
+        from app.domain.pet import apply_monitor_cycle
+        from dataclasses import replace
+        pet = replace(self._base_pet(), is_dead=True, hp=0)
+        updated = apply_monitor_cycle(pet, down_server_names=["db"], recovered_server_names=[])
+        assert updated.hp == 0
+        assert updated.exp == 0
+        assert updated.is_dead is True
+
+    def test_backup_overdue_drain_applied_after_30_days(self):
+        """Backup overdue: HP should drain every cycle after 30 days."""
+        from datetime import timedelta
+        from app.domain.pet import apply_monitor_cycle
+        old_backup = datetime.now(timezone.utc) - timedelta(days=31)
+        pet = self._base_pet(hp=C.HP_MAX, last_backup_date=old_backup,
+                             last_interaction_date=datetime.now(timezone.utc))
+        updated = apply_monitor_cycle(pet, down_server_names=[], recovered_server_names=[])
+        assert updated.hp < C.HP_MAX  # drain applied
+
+    def test_no_backup_overdue_drain_before_30_days(self):
+        """Backup NOT overdue: no drain for recent backup."""
+        from datetime import timedelta
+        from app.domain.pet import apply_monitor_cycle
+        recent_backup = datetime.now(timezone.utc) - timedelta(days=5)
+        pet = self._base_pet(hp=C.HP_MAX, last_backup_date=recent_backup,
+                             last_interaction_date=datetime.now(timezone.utc))
+        updated = apply_monitor_cycle(pet, down_server_names=[], recovered_server_names=[])
+        assert updated.hp == C.HP_MAX  # no drain (healthy cycle gains nothing for HP)
+
+    def test_never_backed_up_no_drain(self):
+        """Pet that has NEVER been backed up should NOT drain HP (incentive to do first backup)."""
+        from app.domain.pet import apply_monitor_cycle
+        pet = self._base_pet(hp=C.HP_MAX, last_backup_date=None,
+                             last_interaction_date=datetime.now(timezone.utc))
+        updated = apply_monitor_cycle(pet, down_server_names=[], recovered_server_names=[])
+        assert updated.hp == C.HP_MAX  # no drain
+
+
+class TestMonitorServiceMaintenanceRecovery:
+    def _make_service(self, servers, check_results, initial_pet=None):
+        pet_repo_inst = MockPetRepo(pet=initial_pet or _default_pet(hp=5))
+        server_repo_inst = MockServerRepo(servers=servers)
+        result_map = {r.server_id: r for r in check_results}
+
+        async def mock_check(server_id, name, address, port):
+            return result_map.get(server_id, ServerCheckResult(server_id, name, True, None))
+
+        from unittest.mock import MagicMock
+        http_checker = MagicMock()
+        http_checker.check = mock_check
+        ping_checker = MagicMock()
+        ping_checker.check = mock_check
+
+        service = MonitorService(
+            pet_repo=pet_repo_inst,
+            server_repo=server_repo_inst,
+            http_checker=http_checker,
+            ping_checker=ping_checker,
+        )
+        return service, pet_repo_inst
+
+    async def test_maintenance_server_recovery_does_not_give_hp(self):
+        """A maintenance server transitioning DOWN→UP should NOT trigger HP recovery."""
+        pet = _default_pet(hp=5)
+        # Maintenance server that was DOWN
+        server = FakeServer(id=1, name="maint-db", address="192.168.1.5", port=None,
+                            type="ping", status="DOWN", maintenance_mode=True)
+        # Check returns UP (recovery transition)
+        result = ServerCheckResult(server_id=1, name="maint-db", is_up=True, error=None)
+        service, pet_repo = self._make_service([server], [result], initial_pet=pet)
+        await service.run_cycle(db=None)
+        # HP should NOT increase from maintenance server recovery
+        assert pet_repo.pet.hp == 5  # unchanged (no recovery event, no EXP either since it was down)
+
+    async def test_maintenance_server_down_does_not_drain_hp(self):
+        """A maintenance server that is DOWN should not drain pet HP."""
+        pet = _default_pet(hp=C.HP_MAX, last_interaction_date=datetime.now(timezone.utc))
+        server = FakeServer(id=1, name="maint-db", address="192.168.1.5", port=None,
+                            type="ping", status="UP", maintenance_mode=True)
+        result = ServerCheckResult(server_id=1, name="maint-db", is_up=False, error="timeout")
+        service, pet_repo = self._make_service([server], [result], initial_pet=pet)
+        await service.run_cycle(db=None)
+        # HP should not decrease because server is in maintenance
+        assert pet_repo.pet.hp == C.HP_MAX

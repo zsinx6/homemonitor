@@ -30,7 +30,7 @@ class HttpChecker(ServerChecker):
                 timeout=C.HTTP_TIMEOUT_SECONDS, follow_redirects=True
             ) as client:
                 response = await client.get(url)
-            is_up = 200 <= response.status_code < 400
+            is_up = 200 <= response.status_code < 300
             error = None if is_up else f"HTTP {response.status_code}"
         except Exception as exc:
             is_up = False

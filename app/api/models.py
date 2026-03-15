@@ -30,6 +30,7 @@ class PetResponse(BaseModel):
     last_interaction_date: Optional[datetime]
     last_updated: datetime
     backup_cooldown_remaining_seconds: int = 0
+    days_since_backup: Optional[int] = None
 
 
 class PetInteractResponse(BaseModel):
@@ -94,6 +95,8 @@ class _ServerBase(BaseModel):
             raise ValueError(
                 "Ping address must be a hostname or IP — remove the URL scheme (e.g. http://)"
             )
+        if self.type == "ping" and self.port is not None:
+            raise ValueError("Ping checks do not use ports — remove the port value")
         return self
 
 
@@ -152,3 +155,15 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     response: str
+
+
+class PetRenameRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=50)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def strip_and_require_non_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("must not be blank or whitespace-only")
+        return v

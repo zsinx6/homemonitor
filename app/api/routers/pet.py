@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from math import ceil
+
 from fastapi import APIRouter, Depends
 
 import aiosqlite
 
 from app.api.dependencies import get_db, get_pet_service, get_phrase_selector
-from app.api.models import PetBackupResponse, PetInteractResponse, PetResponse
+from app.api.models import PetBackupResponse, PetInteractResponse, PetRenameRequest, PetResponse
 from app.domain import constants as C
 from app.domain.pet import get_next_evolution_level
 from app.domain.phrases import PhraseContext
@@ -37,7 +39,7 @@ async def _build_pet_response(db, phrase_selector) -> PetResponse:
     # Compute server-authoritative backup cooldown remaining
     if pet.last_backup_date is not None:
         elapsed_s = (datetime.now(timezone.utc) - pet.last_backup_date).total_seconds()
-        backup_remaining = max(0, int(C.BACKUP_COOLDOWN_HOURS * 3600 - elapsed_s))
+        backup_remaining = max(0, ceil(C.BACKUP_COOLDOWN_HOURS * 3600 - elapsed_s))
     else:
         backup_remaining = 0
 
@@ -108,6 +110,7 @@ async def _build_pet_response(db, phrase_selector) -> PetResponse:
         last_interaction_date=pet.last_interaction_date,
         last_updated=pet.last_updated,
         backup_cooldown_remaining_seconds=backup_remaining,
+        days_since_backup=snapshot.days_since_backup,
     )
 
 
@@ -169,4 +172,15 @@ async def revive(
 ):
     """Revive the dead pet. Resets HP to HP_REVIVE and clears EXP. No-op if alive."""
     await pet_service.revive(db)
+    return await _build_pet_response(db, phrase_selector)
+
+
+@router.patch("/pet/rename", response_model=PetResponse)
+async def rename_pet(
+    body: PetRenameRequest,
+    db: aiosqlite.Connection = Depends(get_db),
+    phrase_selector=Depends(get_phrase_selector),
+):
+    """Set a custom display name for the pet (resets on next evolution)."""
+    await pet_repo.rename_pet(db, body.name)
     return await _build_pet_response(db, phrase_selector)

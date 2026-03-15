@@ -66,3 +66,10 @@ async def clear_last_event(db: aiosqlite.Connection) -> None:
     """One-shot delivery: clear last_event after it has been read."""
     await db.execute("UPDATE pet_state SET last_event = NULL WHERE id = 1")
     await db.commit()
+
+
+async def rename_pet(db: aiosqlite.Connection, name: str) -> Pet:
+    """Update the pet's display name."""
+    await db.execute("UPDATE pet_state SET name = ? WHERE id = 1", (name,))
+    await db.commit()
+    return await get_pet(db)

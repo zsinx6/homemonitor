@@ -56,6 +56,10 @@ CREATE TABLE IF NOT EXISTS tasks (
     created_at   TEXT    NOT NULL,
     completed_at TEXT
 );
+
+CREATE INDEX IF NOT EXISTS idx_servers_status ON servers(status);
+CREATE INDEX IF NOT EXISTS idx_server_daily_stats ON server_daily_stats(server_id, date DESC);
+CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(is_completed);
 """
 
 _SEED_PET_SQL = """

@@ -65,7 +65,10 @@ class MonitorService:
             id_to_name[i] for i in newly_down_ids
             if i in id_to_name and i not in maintenance_ids
         ]
-        newly_recovered_names = [id_to_name[i] for i in newly_recovered_ids if i in id_to_name]
+        newly_recovered_names = [
+            id_to_name[i] for i in newly_recovered_ids
+            if i in id_to_name and i not in maintenance_ids
+        ]
 
         # Always pass ALL currently-down non-maintenance servers so HP drains every cycle
         all_currently_down_names = [
