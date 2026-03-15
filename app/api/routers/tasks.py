@@ -19,6 +19,7 @@ def _task_out(t) -> TaskOut:
         is_completed=t.is_completed,
         created_at=t.created_at,
         completed_at=t.completed_at,
+        priority=getattr(t, "priority", "normal"),
     )
 
 
@@ -34,7 +35,7 @@ async def create_task(
     body: TaskCreate,
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    task = await task_repo.create_task(db, body.task)
+    task = await task_repo.create_task(db, body.task, body.priority)
     return _task_out(task)
 
 

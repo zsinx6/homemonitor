@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 import aiosqlite
 
 from app.api.dependencies import get_db
-from app.api.models import DailyStatOut, ServerCreate, ServerOut, ServerUpdate
+from app.api.models import DailyStatOut, MoveServerRequest, ServerCreate, ServerOut, ServerUpdate
 from app.domain.memory import MemoryType
 from app.infrastructure.repositories import memory_repo, server_repo
 
@@ -28,6 +28,7 @@ async def _server_with_stats(db, srv) -> ServerOut:
         last_error=srv.last_error,
         last_checked=srv.last_checked,
         maintenance_mode=srv.maintenance_mode,
+        position=srv.position,
         daily_stats=[
             DailyStatOut(
                 date=d.date,
@@ -90,3 +91,18 @@ async def toggle_maintenance(
     mem_type = MemoryType.MAINTENANCE_ON if srv.maintenance_mode else MemoryType.MAINTENANCE_OFF
     await memory_repo.add_memory(db, mem_type, srv.name)
     return await _server_with_stats(db, srv)
+
+
+@router.patch("/servers/{server_id}/move", response_model=list[ServerOut])
+async def move_server(
+    server_id: int,
+    body: MoveServerRequest,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Move a server up or down in the display order. Returns the full updated list."""
+    srv = await server_repo.get_server(db, server_id)
+    if srv is None:
+        raise HTTPException(status_code=404, detail="Server not found")
+    await server_repo.move_server(db, server_id, body.direction)
+    servers = await server_repo.list_servers(db)
+    return [await _server_with_stats(db, s) for s in servers]

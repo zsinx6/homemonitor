@@ -22,6 +22,7 @@ class ServerRow:
     last_error: Optional[str]
     last_checked: Optional[datetime]
     maintenance_mode: bool = False
+    position: int = 0
 
 
 @dataclass
@@ -51,12 +52,13 @@ def _row_to_server(row: aiosqlite.Row) -> ServerRow:
         last_error=row["last_error"],
         last_checked=_parse_dt(row["last_checked"]),
         maintenance_mode=bool(row["maintenance_mode"]),
+        position=row["position"] if "position" in row.keys() else 0,
     )
 
 
 async def list_servers(db: aiosqlite.Connection) -> list[ServerRow]:
     db.row_factory = aiosqlite.Row
-    async with db.execute("SELECT * FROM servers ORDER BY id") as cur:
+    async with db.execute("SELECT * FROM servers ORDER BY position, id") as cur:
         rows = await cur.fetchall()
     return [_row_to_server(r) for r in rows]
 
@@ -75,9 +77,13 @@ async def create_server(
     port: Optional[int],
     server_type: str,
 ) -> ServerRow:
+    # New servers go to the end of the list
+    async with db.execute("SELECT COALESCE(MAX(position), 0) + 1 FROM servers") as cur:
+        row = await cur.fetchone()
+        next_pos = row[0] if row else 1
     async with db.execute(
-        "INSERT INTO servers (name, address, port, type) VALUES (?, ?, ?, ?)",
-        (name, address, port, server_type),
+        "INSERT INTO servers (name, address, port, type, position) VALUES (?, ?, ?, ?, ?)",
+        (name, address, port, server_type, next_pos),
     ) as cur:
         server_id = cur.lastrowid
     await db.commit()
@@ -117,6 +123,45 @@ async def toggle_maintenance(db: aiosqlite.Connection, server_id: int) -> Option
         "UPDATE servers SET maintenance_mode = ? WHERE id = ?",
         (new_mode, server_id),
     )
+    await db.commit()
+    return await get_server(db, server_id)
+
+
+async def move_server(
+    db: aiosqlite.Connection,
+    server_id: int,
+    direction: str,
+) -> Optional[ServerRow]:
+    """Swap the position of server_id with its neighbour ('up' or 'down').
+
+    Returns the updated server row, or None if not found / already at boundary.
+    """
+    server = await get_server(db, server_id)
+    if server is None:
+        return None
+
+    db.row_factory = aiosqlite.Row
+    if direction == "up":
+        # Find the server with the largest position that is still < server.position
+        query = (
+            "SELECT * FROM servers WHERE position < ? ORDER BY position DESC LIMIT 1",
+            (server.position,),
+        )
+    else:
+        query = (
+            "SELECT * FROM servers WHERE position > ? ORDER BY position ASC LIMIT 1",
+            (server.position,),
+        )
+
+    async with db.execute(query[0], query[1]) as cur:
+        neighbour_row = await cur.fetchone()
+    if neighbour_row is None:
+        return server  # already at boundary — no-op
+
+    neighbour = _row_to_server(neighbour_row)
+    # Swap positions
+    await db.execute("UPDATE servers SET position = ? WHERE id = ?", (neighbour.position, server_id))
+    await db.execute("UPDATE servers SET position = ? WHERE id = ?", (server.position, neighbour.id))
     await db.commit()
     return await get_server(db, server_id)
 

@@ -4,11 +4,13 @@ from __future__ import annotations
 import asyncio
 from dataclasses import replace
 from datetime import datetime, timezone
+from typing import Optional
 
 from app.domain.memory import MemoryType
 from app.domain.pet import apply_monitor_cycle
 from app.domain.server import ServerCheckResult, detect_state_transitions
 from app.infrastructure.checkers.base import ServerChecker
+from app.infrastructure.notifier import NtfyNotifier
 
 
 class MonitorService:
@@ -19,12 +21,18 @@ class MonitorService:
         http_checker: ServerChecker,
         ping_checker: ServerChecker,
         memory_repo=None,
+        notifier: Optional[NtfyNotifier] = None,
+        notify_on_recovery: bool = False,
+        notify_on_death: bool = True,
     ) -> None:
         self._pet_repo = pet_repo
         self._server_repo = server_repo
         self._http_checker = http_checker
         self._ping_checker = ping_checker
         self._memory_repo = memory_repo
+        self._notifier = notifier
+        self._notify_on_recovery = notify_on_recovery
+        self._notify_on_death = notify_on_death
 
     async def run_cycle(self, db) -> None:
         """Run one full monitoring cycle: check all servers, update pet state."""
@@ -103,6 +111,31 @@ class MonitorService:
                     await self._memory_repo.add_memory(db, MemoryType.DIGIVOLUTION, species)
                 elif updated_pet.last_event == "level_up":
                     await self._memory_repo.add_memory(db, MemoryType.LEVEL_UP, str(updated_pet.level))
+
+        # Push notifications (fire-and-forget, never block)
+        if self._notifier:
+            for name in newly_down_names:
+                await self._notifier.notify(
+                    title="🔴 Server DOWN",
+                    message=f"{name} is not responding on your homelab.",
+                    priority="high",
+                    tags=["warning", "skull"],
+                )
+            if self._notify_on_recovery:
+                for name in newly_recovered_names:
+                    await self._notifier.notify(
+                        title="🟢 Server recovered",
+                        message=f"{name} is back online.",
+                        priority="default",
+                        tags=["white_check_mark"],
+                    )
+            if self._notify_on_death and updated_pet.is_dead and not pet.is_dead:
+                await self._notifier.notify(
+                    title="💀 Your Digimon DIED",
+                    message="Your homelab pet's HP hit zero. Open DigiMon(itor) to revive it!",
+                    priority="high",
+                    tags=["skull", "rotating_light"],
+                )
 
     async def _check_server(
         self,

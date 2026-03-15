@@ -9,6 +9,8 @@ import aiosqlite
 
 from app.domain import constants as C
 
+_PRIORITY_ORDER = {"high": 0, "normal": 1, "low": 2}
+
 
 @dataclass
 class TaskRow:
@@ -17,6 +19,7 @@ class TaskRow:
     is_completed: bool
     created_at: datetime
     completed_at: Optional[datetime]
+    priority: str = "normal"
 
 
 def _row_to_task(row: aiosqlite.Row) -> TaskRow:
@@ -25,22 +28,27 @@ def _row_to_task(row: aiosqlite.Row) -> TaskRow:
             return None
         return datetime.fromisoformat(val).replace(tzinfo=timezone.utc)
 
+    keys = row.keys() if hasattr(row, "keys") else {}
     return TaskRow(
         id=row["id"],
         task=row["task"],
         is_completed=bool(row["is_completed"]),
         created_at=_parse_dt(row["created_at"]),
         completed_at=_parse_dt(row["completed_at"]),
+        priority=row["priority"] if "priority" in keys else "normal",
     )
 
 
 async def list_tasks(db: aiosqlite.Connection) -> list[TaskRow]:
-    """Return pending tasks (all) then last 20 completed, newest first."""
+    """Return pending tasks (high→normal→low, newest within tier) then last 20 completed."""
     db.row_factory = aiosqlite.Row
     async with db.execute(
         "SELECT * FROM tasks WHERE is_completed = 0 ORDER BY created_at DESC"
     ) as cur:
         pending = [_row_to_task(r) for r in await cur.fetchall()]
+
+    # Sort pending by priority tier, preserve newest-first within tier
+    pending.sort(key=lambda t: _PRIORITY_ORDER.get(t.priority, 1))
 
     async with db.execute(
         f"""SELECT * FROM tasks WHERE is_completed = 1
@@ -59,11 +67,15 @@ async def get_task(db: aiosqlite.Connection, task_id: int) -> Optional[TaskRow]:
     return _row_to_task(row) if row else None
 
 
-async def create_task(db: aiosqlite.Connection, task_text: str) -> TaskRow:
+async def create_task(
+    db: aiosqlite.Connection,
+    task_text: str,
+    priority: str = "normal",
+) -> TaskRow:
     now = datetime.now(timezone.utc).isoformat()
     async with db.execute(
-        "INSERT INTO tasks (task, is_completed, created_at) VALUES (?, 0, ?)",
-        (task_text, now),
+        "INSERT INTO tasks (task, is_completed, created_at, priority) VALUES (?, 0, ?, ?)",
+        (task_text, now, priority),
     ) as cur:
         task_id = cur.lastrowid
     await db.commit()

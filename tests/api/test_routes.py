@@ -674,3 +674,181 @@ class TestQoLFixes:
         maint = [m for m in memories if m["event_type"] == "maintenance_on"]
         assert len(maint) == 1
         assert maint[0]["detail"] == "redis"
+
+
+class TestServerOrdering:
+    """PATCH /api/servers/{id}/move — reorder servers."""
+
+    async def _mk(self, client, name, addr="http://localhost"):
+        return (await client.post("/api/servers", json={"name": name, "address": addr, "type": "http"})).json()
+
+    async def test_server_has_position_field(self, client):
+        srv = await self._mk(client, "pos-test")
+        assert "position" in srv
+
+    async def test_move_nonexistent_server_returns_404(self, client):
+        r = await client.patch("/api/servers/9999/move", json={"direction": "up"})
+        assert r.status_code == 404
+
+    async def test_move_invalid_direction_rejected(self, client):
+        srv = await self._mk(client, "bad-dir")
+        r = await client.patch(f"/api/servers/{srv['id']}/move", json={"direction": "sideways"})
+        assert r.status_code == 422
+
+    async def test_move_up_changes_order(self, client):
+        a = await self._mk(client, "AAA")
+        b = await self._mk(client, "BBB")
+        # B is after A; move B up → B should now be before A
+        result = await client.patch(f"/api/servers/{b['id']}/move", json={"direction": "up"})
+        assert result.status_code == 200
+        ids = [s["id"] for s in result.json()]
+        assert ids.index(b["id"]) < ids.index(a["id"])
+
+    async def test_move_down_changes_order(self, client):
+        a = await self._mk(client, "CCC")
+        b = await self._mk(client, "DDD")
+        # A is before B; move A down → A should now be after B
+        result = await client.patch(f"/api/servers/{a['id']}/move", json={"direction": "down"})
+        assert result.status_code == 200
+        ids = [s["id"] for s in result.json()]
+        assert ids.index(a["id"]) > ids.index(b["id"])
+
+    async def test_move_up_at_top_is_noop(self, client):
+        a = await self._mk(client, "TOP")
+        # Moving the only (or first) server up should return 200 without error
+        r = await client.patch(f"/api/servers/{a['id']}/move", json={"direction": "up"})
+        assert r.status_code == 200
+
+    async def test_move_returns_full_server_list(self, client):
+        a = await self._mk(client, "LIST1")
+        b = await self._mk(client, "LIST2")
+        result = await client.patch(f"/api/servers/{b['id']}/move", json={"direction": "up"})
+        data = result.json()
+        assert isinstance(data, list)
+        ids = {s["id"] for s in data}
+        assert a["id"] in ids
+        assert b["id"] in ids
+
+
+class TestTaskPriority:
+    """Task priority field — create, list, sort order."""
+
+    async def test_task_has_priority_field(self, client):
+        t = (await client.post("/api/tasks", json={"task": "Check logs"})).json()
+        assert "priority" in t
+
+    async def test_default_priority_is_normal(self, client):
+        t = (await client.post("/api/tasks", json={"task": "Check logs"})).json()
+        assert t["priority"] == "normal"
+
+    async def test_create_high_priority_task(self, client):
+        t = (await client.post("/api/tasks", json={"task": "URGENT", "priority": "high"})).json()
+        assert t["priority"] == "high"
+
+    async def test_create_low_priority_task(self, client):
+        t = (await client.post("/api/tasks", json={"task": "Someday", "priority": "low"})).json()
+        assert t["priority"] == "low"
+
+    async def test_invalid_priority_rejected(self, client):
+        r = await client.post("/api/tasks", json={"task": "Bad prio", "priority": "critical"})
+        assert r.status_code == 422
+
+    async def test_high_priority_tasks_listed_before_normal(self, client):
+        await client.post("/api/tasks", json={"task": "Normal task", "priority": "normal"})
+        await client.post("/api/tasks", json={"task": "High task", "priority": "high"})
+        tasks = (await client.get("/api/tasks")).json()["tasks"]
+        pending = [t for t in tasks if not t["is_completed"]]
+        high_idx   = next(i for i, t in enumerate(pending) if t["priority"] == "high")
+        normal_idx = next(i for i, t in enumerate(pending) if t["priority"] == "normal")
+        assert high_idx < normal_idx
+
+    async def test_priority_preserved_in_list(self, client):
+        await client.post("/api/tasks", json={"task": "Low one", "priority": "low"})
+        tasks = (await client.get("/api/tasks")).json()["tasks"]
+        low = next(t for t in tasks if t["task"] == "Low one")
+        assert low["priority"] == "low"
+
+
+class TestExportImport:
+    """GET /api/export and POST /api/import."""
+
+    async def test_export_returns_200(self, client):
+        r = await client.get("/api/export")
+        assert r.status_code == 200
+
+    async def test_export_structure(self, client):
+        data = (await client.get("/api/export")).json()
+        assert "version" in data
+        assert "exported_at" in data
+        assert "servers" in data
+        assert "tasks" in data
+        assert "memories" in data
+        assert "pet" in data
+
+    async def test_export_includes_servers(self, client):
+        await client.post("/api/servers", json={"name": "exp-srv", "address": "http://localhost", "type": "http"})
+        data = (await client.get("/api/export")).json()
+        names = [s["name"] for s in data["servers"]]
+        assert "exp-srv" in names
+
+    async def test_export_includes_tasks(self, client):
+        await client.post("/api/tasks", json={"task": "export-task", "priority": "high"})
+        data = (await client.get("/api/export")).json()
+        tasks = [t["task"] for t in data["tasks"]]
+        assert "export-task" in tasks
+
+    async def test_export_task_has_priority(self, client):
+        await client.post("/api/tasks", json={"task": "prio-export", "priority": "high"})
+        data = (await client.get("/api/export")).json()
+        task = next(t for t in data["tasks"] if t["task"] == "prio-export")
+        assert task["priority"] == "high"
+
+    async def test_import_empty_payload_rejected(self, client):
+        r = await client.post("/api/import", json={"servers": [], "tasks": []})
+        assert r.status_code == 422
+
+    async def test_import_servers_replaces_existing(self, client):
+        await client.post("/api/servers", json={"name": "old-srv", "address": "http://old", "type": "http"})
+        r = await client.post("/api/import", json={
+            "servers": [{"name": "new-srv", "address": "http://new", "type": "http"}],
+            "tasks": []
+        })
+        assert r.status_code == 200
+        assert r.json()["imported_servers"] == 1
+        servers = (await client.get("/api/servers")).json()
+        names = [s["name"] for s in servers]
+        assert "new-srv" in names
+        assert "old-srv" not in names
+
+    async def test_import_tasks_adds_pending(self, client):
+        r = await client.post("/api/import", json={
+            "servers": [{"name": "s", "address": "http://s", "type": "http"}],
+            "tasks": [
+                {"task": "imported-task", "priority": "high", "is_completed": False}
+            ]
+        })
+        assert r.status_code == 200
+        assert r.json()["imported_tasks"] == 1
+        tasks = (await client.get("/api/tasks")).json()["tasks"]
+        names = [t["task"] for t in tasks]
+        assert "imported-task" in names
+
+    async def test_import_skips_completed_tasks(self, client):
+        r = await client.post("/api/import", json={
+            "servers": [{"name": "s2", "address": "http://s2", "type": "http"}],
+            "tasks": [
+                {"task": "done-task", "priority": "normal", "is_completed": True}
+            ]
+        })
+        assert r.json()["imported_tasks"] == 0
+
+    async def test_import_invalid_server_type_defaults_to_http(self, client):
+        r = await client.post("/api/import", json={
+            "servers": [{"name": "weird", "address": "http://weird", "type": "ftp"}]
+        })
+        assert r.status_code == 200
+        servers = (await client.get("/api/servers")).json()
+        weird = next((s for s in servers if s["name"] == "weird"), None)
+        assert weird is not None
+        assert weird["type"] == "http"
+

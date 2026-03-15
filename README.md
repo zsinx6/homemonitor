@@ -99,18 +99,19 @@ All endpoints are prefixed `/api`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/servers` | List all servers with 7-day uptime stats |
+| `GET` | `/api/servers` | List all servers with 7-day uptime stats (sorted by position) |
 | `POST` | `/api/servers` | Add a server `{"name", "address", "type": "http"\|"ping", "port"?}` |
 | `PUT` | `/api/servers/{id}` | Edit server name / address / port / type |
 | `DELETE` | `/api/servers/{id}` | Remove a server |
 | `PATCH` | `/api/servers/{id}/maintenance` | Toggle maintenance mode (pauses HP damage) |
+| `PATCH` | `/api/servers/{id}/move` | Reorder server `{"direction": "up"\|"down"}` |
 
 ### Tasks
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/tasks` | List tasks (pending + last 20 completed) |
-| `POST` | `/api/tasks` | Add a task `{"task": "Fix nginx backup"}` |
+| `GET` | `/api/tasks` | List tasks (pending sorted high→normal→low, then last 20 completed) |
+| `POST` | `/api/tasks` | Add a task `{"task": "Fix nginx", "priority": "high"\|"normal"\|"low"}` |
 | `PUT` | `/api/tasks/{id}/complete` | Complete a task (+20 EXP, +1 HP) |
 | `DELETE` | `/api/tasks/{id}` | Delete a task |
 
@@ -121,6 +122,13 @@ All endpoints are prefixed `/api`.
 | `GET` | `/api/memories?limit=25&offset=0` | Paginated event log with summary counts |
 | `GET` | `/api/status` | Full context snapshot (used by LLM) |
 | `POST` | `/api/chat` | Chat with the pet `{"message": "How are the servers?"}` |
+
+### Export / Import
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/export` | Download full JSON snapshot (servers, tasks, memories, pet state) |
+| `POST` | `/api/import` | Restore servers and pending tasks from export JSON |
 
 ---
 
@@ -169,6 +177,27 @@ HP max is 10. When HP reaches 0 the pet dies and must be revived.
 
 ---
 
+## ntfy.sh push notifications
+
+[ntfy.sh](https://ntfy.sh) delivers push alerts to your phone when servers go down or your pet dies — zero account required.
+
+1. Install the ntfy app on your phone
+2. Subscribe to a unique topic name (e.g. `my-homelab-alerts`)
+3. Set it in `digimonitor.toml` or via env var:
+
+```bash
+export NTFY_TOPIC=https://ntfy.sh/my-homelab-alerts
+# or self-hosted:
+export NTFY_TOPIC=https://ntfy.yourserver.com/my-topic
+```
+
+Alerts are sent for:
+- Server goes DOWN 🔴
+- Pet DIES 💀
+- Server recovers 🟢 (opt-in via `notify_on_recovery = true`)
+
+---
+
 ## Gemini integration
 
 Set `GEMINI_API_KEY` before starting the server.
@@ -183,18 +212,33 @@ No key? Everything works — phrases stay static and chat returns a friendly off
 
 ## Configuration
 
-All tunable numbers live in `app/domain/constants.py`. Edit and restart — no DB migration needed.
+Place a `digimonitor.toml` file in the project root to override defaults without editing source code.
 
-```python
-EXP_PER_HEALTHY_CYCLE = 1       # EXP gained when all servers are UP
-HP_LOSS_PER_DOWN_CYCLE = 1      # HP lost per downed server per cycle
-HP_MAX = 10
-MONITOR_INTERVAL_SECONDS = 60   # how often servers are checked
-MONITOR_CYCLE_TIMEOUT_SECONDS = 120  # abort a stuck cycle after this
-BACKUP_COOLDOWN_HOURS = 1
-LONELINESS_HOURS = 24           # hours before the pet starts feeling lonely
-BACKUP_OVERDUE_DAYS = 30
+```toml
+[game]
+exp_per_healthy_cycle = 1
+hp_loss_per_down_cycle = 1
+hp_max = 10
+loneliness_hours = 24
+backup_overdue_days = 30
+
+[monitoring]
+interval_seconds = 60
+http_timeout_seconds = 10
+ping_timeout_seconds = 3
+
+[notifications]
+# ntfy.sh push notifications — leave empty to disable
+ntfy_topic = "https://ntfy.sh/my-homelab-alerts"
+notify_on_recovery = false   # notify when a server comes back UP
+notify_on_death = true       # notify when the pet dies
 ```
+
+Environment variables take the highest priority:
+- `NTFY_TOPIC` — overrides `notifications.ntfy_topic`
+- `GEMINI_API_KEY` — enables the Gemini LLM integration
+
+Individual constants can also still be edited in `app/domain/constants.py`.
 
 ---
 
@@ -204,7 +248,7 @@ BACKUP_OVERDUE_DAYS = 30
 # Install
 pip install -r requirements.txt
 
-# Run tests (249 tests, ~3 s)
+# Run tests (273 tests, ~3 s)
 pytest
 
 # Run with auto-reload
@@ -220,11 +264,14 @@ app/
   services/         # Business logic — MonitorService, PetService, TaskService,
                     #                  ContextService, LLMChatService
   api/
-    routers/        # FastAPI route handlers (pet, servers, tasks, chat, memories)
+    routers/        # FastAPI route handlers (pet, servers, tasks, chat, memories, export)
     models.py       # Pydantic request/response models
     dependencies.py
-  main.py           # App factory + lifespan (DB init, worker start)
+  main.py           # App factory + lifespan (DB init, worker start, config load)
   worker.py         # Background monitor loop (asyncio, 60 s interval)
+  infrastructure/
+    config.py       # TOML config loader — overrides constants + ntfy settings
+    notifier.py     # ntfy.sh push notification client
 static/
   index.html        # Single-file SPA — no build step, NES.css pixel theme
 tests/

@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS servers (
     successful_checks INTEGER NOT NULL DEFAULT 0,
     last_error        TEXT,
     last_checked      TEXT,
-    maintenance_mode  INTEGER NOT NULL DEFAULT 0
+    maintenance_mode  INTEGER NOT NULL DEFAULT 0,
+    position          INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS server_daily_stats (
@@ -54,7 +55,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     task         TEXT    NOT NULL,
     is_completed INTEGER NOT NULL DEFAULT 0,
     created_at   TEXT    NOT NULL,
-    completed_at TEXT
+    completed_at TEXT,
+    priority     TEXT    NOT NULL DEFAULT 'normal'
 );
 
 CREATE INDEX IF NOT EXISTS idx_servers_status ON servers(status);
@@ -95,6 +97,27 @@ async def init_db(db: aiosqlite.Connection) -> None:
     try:
         await db.execute(
             "ALTER TABLE servers ADD COLUMN maintenance_mode INTEGER NOT NULL DEFAULT 0"
+        )
+        await db.commit()
+    except aiosqlite.OperationalError:
+        pass  # column already exists
+    # Migration: add position column for server ordering
+    try:
+        await db.execute(
+            "ALTER TABLE servers ADD COLUMN position INTEGER NOT NULL DEFAULT 0"
+        )
+        await db.commit()
+        # Initialise positions from current id order so existing data is sane
+        await db.execute(
+            "UPDATE servers SET position = id"
+        )
+        await db.commit()
+    except aiosqlite.OperationalError:
+        pass  # column already exists
+    # Migration: add priority column to tasks
+    try:
+        await db.execute(
+            "ALTER TABLE tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'"
         )
         await db.commit()
     except aiosqlite.OperationalError:

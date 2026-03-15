@@ -14,6 +14,8 @@ from app.domain import constants as C
 from app.infrastructure.adapters import MemoryRepoAdapter, PetRepoAdapter, ServerRepoAdapter
 from app.infrastructure.checkers.http_checker import HttpChecker
 from app.infrastructure.checkers.ping_checker import PingChecker
+from app.infrastructure.config import get_config
+from app.infrastructure.notifier import build_notifier
 from app.services.monitor_service import MonitorService
 
 logger = logging.getLogger(__name__)
@@ -22,12 +24,16 @@ _lock = asyncio.Lock()
 
 
 def _build_monitor_service() -> MonitorService:
+    cfg = get_config()
     return MonitorService(
         pet_repo=PetRepoAdapter(),
         server_repo=ServerRepoAdapter(),
         http_checker=HttpChecker(),
         ping_checker=PingChecker(),
         memory_repo=MemoryRepoAdapter(),
+        notifier=build_notifier(cfg.ntfy_topic),
+        notify_on_recovery=cfg.notify_on_recovery,
+        notify_on_death=cfg.notify_on_death,
     )
 
 

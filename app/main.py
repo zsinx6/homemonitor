@@ -10,6 +10,7 @@ import aiosqlite
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from app.infrastructure.config import load_config
 from app.infrastructure.database import init_db
 from app.worker import monitor_loop
 
@@ -23,6 +24,8 @@ def create_app(db_path: str = DB_PATH) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # Load configuration (digimonitor.toml + env vars) before anything else
+        load_config()
         # Startup: init DB and start background worker using the captured db_path
         async with aiosqlite.connect(db_path) as db:
             await init_db(db)
@@ -43,13 +46,14 @@ def create_app(db_path: str = DB_PATH) -> FastAPI:
     app.state.db_path = db_path
 
     # API routers (registered after import to avoid circular deps)
-    from app.api.routers import pet, servers, tasks, chat, status, memories  # noqa: PLC0415
+    from app.api.routers import pet, servers, tasks, chat, status, memories, export  # noqa: PLC0415
     app.include_router(pet.router, prefix="/api")
     app.include_router(servers.router, prefix="/api")
     app.include_router(tasks.router, prefix="/api")
     app.include_router(chat.router, prefix="/api")
     app.include_router(status.router, prefix="/api")
     app.include_router(memories.router, prefix="/api")
+    app.include_router(export.router, prefix="/api")
 
     # Serve the SPA
     static_dir = Path(__file__).parent.parent / "static"

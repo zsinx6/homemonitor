@@ -684,6 +684,18 @@
              placeholder="Fix nginx backup" maxlength="500"
              onkeydown="if(event.key==='Enter') addTask()">
     </div>
+    <div class="form-row" style="align-items:center;gap:6px;margin-top:4px">
+      <label class="form-label" style="white-space:nowrap">PRIORITY</label>
+      <label style="font-size:8px;cursor:pointer">
+        <input type="radio" name="task-priority" value="high"> 🔴 High
+      </label>
+      <label style="font-size:8px;cursor:pointer">
+        <input type="radio" name="task-priority" value="normal" checked> Normal
+      </label>
+      <label style="font-size:8px;cursor:pointer">
+        <input type="radio" name="task-priority" value="low"> 🔵 Low
+      </label>
+    </div>
     <div id="task-error" class="form-error" role="alert" aria-live="polite"></div>
     <button class="nes-btn is-primary" onclick="addTask()">ADD TASK</button>
   </div>
@@ -713,6 +725,14 @@
     </button>
     <div style="font-size:7px;color:var(--grey);text-align:center;margin-top:6px">
       Reviving resets EXP to 0 and restores 5 HP.
+    </div>
+  </div>
+
+  <div style="margin-top:24px;border-top:1px solid var(--grey);padding-top:16px">
+    <div style="font-size:7px;color:var(--grey);text-align:center;margin-bottom:8px">DATA EXPORT</div>
+    <button class="nes-btn" style="width:100%" onclick="exportData()">📦 EXPORT BACKUP JSON</button>
+    <div style="font-size:7px;color:var(--grey);text-align:center;margin-top:6px">
+      Downloads servers, tasks &amp; memories as JSON.
     </div>
   </div>
 </div>
@@ -1092,6 +1112,10 @@ function renderServers(servers) {
             onclick="toggleMaintenance(${s.id})">🔧</button>
     <button class="nes-btn" style="font-size:6px!important;padding:2px 6px;margin-left:4px"
             title="Edit server" onclick="openEditServer(${s.id})">✎</button>
+    <button class="nes-btn" style="font-size:6px!important;padding:2px 5px;margin-left:2px"
+            title="Move up" onclick="moveServer(${s.id},'up')">▲</button>
+    <button class="nes-btn" style="font-size:6px!important;padding:2px 5px;margin-left:2px"
+            title="Move down" onclick="moveServer(${s.id},'down')">▼</button>
     <button class="nes-btn is-error" style="font-size:6px!important;padding:2px 6px;margin-left:4px"
             onclick="deleteServer(${s.id})">✕</button>
   </div>
@@ -1125,12 +1149,21 @@ function renderTasks(data) {
     return;
   }
 
-  const pendingHtml = pending.map(t => `
+  const PRIORITY_BADGE = {
+    high:   '<span style="font-size:6px;color:#e74c3c;margin-right:3px" title="High priority">🔴</span>',
+    normal: '',
+    low:    '<span style="font-size:6px;color:var(--grey);margin-right:3px" title="Low priority">🔵</span>',
+  };
+
+  const pendingHtml = pending.map(t => {
+    const badge = PRIORITY_BADGE[t.priority] || '';
+    return `
 <div class="task-item" id="task-${t.id}">
   <input type="checkbox" class="task-checkbox" onchange="completeTask(${t.id}, this)">
-  <span class="task-text">${escHtml(t.task)}</span>
+  ${badge}<span class="task-text">${escHtml(t.task)}</span>
   <button class="task-delete-btn" onclick="deleteTask(${t.id})" title="Delete task">✕</button>
-</div>`).join("");
+</div>`;
+  }).join("");
 
   let completedHtml = "";
   if (completed.length) {
@@ -1322,6 +1355,13 @@ async function toggleMaintenance(id) {
   } catch (_) {}
 }
 
+async function moveServer(id, direction) {
+  try {
+    await api("PATCH", `/api/servers/${id}/move`, { direction });
+    await poll();
+  } catch (_) {}
+}
+
 function openEditServer(id) {
   const srv = state.servers.find(s => s.id === id);
   if (!srv) return;
@@ -1360,14 +1400,19 @@ async function saveServerEdit() {
 }
 
 async function addTask() {
-  const input = document.getElementById("task-input");
-  const text  = input.value.trim();
-  const errEl = document.getElementById("task-error");
+  const input    = document.getElementById("task-input");
+  const text     = input.value.trim();
+  const errEl    = document.getElementById("task-error");
+  const prioEl   = document.querySelector('input[name="task-priority"]:checked');
+  const priority = prioEl ? prioEl.value : "normal";
   errEl.textContent = "";
   if (!text) return;
   try {
-    await api("POST", "/api/tasks", { task: text });
+    await api("POST", "/api/tasks", { task: text, priority });
     input.value = "";
+    // Reset priority to normal after adding
+    const normalEl = document.querySelector('input[name="task-priority"][value="normal"]');
+    if (normalEl) normalEl.checked = true;
     await poll();
   } catch (e) {
     if (e.isValidation) errEl.textContent = e.message;
@@ -1462,6 +1507,22 @@ async function doRevive() {
   } catch (_) {}
   btn.disabled = false;
   btn.textContent = "💀 REVIVE PET";
+}
+
+async function exportData() {
+  try {
+    const data = await api("GET", "/api/export");
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    const ts   = new Date().toISOString().slice(0, 10);
+    a.href     = url;
+    a.download = `digimonitor-backup-${ts}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (_) {
+    alert("Export failed. Check the console.");
+  }
 }
 
 async function sendChat() {

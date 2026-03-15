@@ -72,6 +72,7 @@ class ServerOut(BaseModel):
     last_checked: Optional[datetime]
     daily_stats: list[DailyStatOut] = Field(default_factory=list)
     maintenance_mode: bool = False
+    position: int = 0
 
 
 class _ServerBase(BaseModel):
@@ -108,6 +109,10 @@ class ServerUpdate(_ServerBase):
     pass
 
 
+class MoveServerRequest(BaseModel):
+    direction: str = Field(..., pattern="^(up|down)$")
+
+
 # ---------------------------------------------------------------------------
 # Tasks
 # ---------------------------------------------------------------------------
@@ -118,6 +123,7 @@ class TaskOut(BaseModel):
     is_completed: bool
     created_at: datetime
     completed_at: Optional[datetime]
+    priority: str = "normal"
 
 
 class TaskListResponse(BaseModel):
@@ -127,6 +133,7 @@ class TaskListResponse(BaseModel):
 
 class TaskCreate(BaseModel):
     task: str = Field(..., min_length=1, max_length=500)
+    priority: str = Field("normal", pattern="^(high|normal|low)$")
 
     @field_validator("task", mode="before")
     @classmethod
