@@ -1,0 +1,86 @@
+"""Task repository — async DB read/write for tasks table."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Optional
+
+import aiosqlite
+
+from app.domain import constants as C
+
+
+@dataclass
+class TaskRow:
+    id: int
+    task: str
+    is_completed: bool
+    created_at: datetime
+    completed_at: Optional[datetime]
+
+
+def _row_to_task(row: aiosqlite.Row) -> TaskRow:
+    def _parse_dt(val: Optional[str]) -> Optional[datetime]:
+        if val is None:
+            return None
+        return datetime.fromisoformat(val).replace(tzinfo=timezone.utc)
+
+    return TaskRow(
+        id=row["id"],
+        task=row["task"],
+        is_completed=bool(row["is_completed"]),
+        created_at=_parse_dt(row["created_at"]),
+        completed_at=_parse_dt(row["completed_at"]),
+    )
+
+
+async def list_tasks(db: aiosqlite.Connection) -> list[TaskRow]:
+    """Return pending tasks (all) then last 20 completed, newest first."""
+    db.row_factory = aiosqlite.Row
+    async with db.execute(
+        "SELECT * FROM tasks WHERE is_completed = 0 ORDER BY created_at DESC"
+    ) as cur:
+        pending = [_row_to_task(r) for r in await cur.fetchall()]
+
+    async with db.execute(
+        f"""SELECT * FROM tasks WHERE is_completed = 1
+            ORDER BY completed_at DESC
+            LIMIT {C.COMPLETED_TASKS_DISPLAY_CAP}"""
+    ) as cur:
+        completed = [_row_to_task(r) for r in await cur.fetchall()]
+
+    return pending + completed
+
+
+async def get_task(db: aiosqlite.Connection, task_id: int) -> Optional[TaskRow]:
+    db.row_factory = aiosqlite.Row
+    async with db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)) as cur:
+        row = await cur.fetchone()
+    return _row_to_task(row) if row else None
+
+
+async def create_task(db: aiosqlite.Connection, task_text: str) -> TaskRow:
+    now = datetime.now(timezone.utc).isoformat()
+    async with db.execute(
+        "INSERT INTO tasks (task, is_completed, created_at) VALUES (?, 0, ?)",
+        (task_text, now),
+    ) as cur:
+        task_id = cur.lastrowid
+    await db.commit()
+    return await get_task(db, task_id)
+
+
+async def complete_task(
+    db: aiosqlite.Connection, task_id: int
+) -> Optional[TaskRow]:
+    """Mark a task complete. Returns None if task not found or already complete."""
+    task = await get_task(db, task_id)
+    if task is None or task.is_completed:
+        return None
+    now = datetime.now(timezone.utc).isoformat()
+    await db.execute(
+        "UPDATE tasks SET is_completed = 1, completed_at = ? WHERE id = ?",
+        (now, task_id),
+    )
+    await db.commit()
+    return await get_task(db, task_id)
