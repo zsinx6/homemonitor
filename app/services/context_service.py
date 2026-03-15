@@ -156,6 +156,10 @@ class ContextSnapshot:
                     memory_parts.append(f"was revived ({time_str})")
                 elif m.event_type == MemoryType.RENAME:
                     memory_parts.append(f"renamed to {m.detail} ({time_str})")
+                elif m.event_type == MemoryType.MAINTENANCE_ON:
+                    memory_parts.append(f"{m.detail} entered maintenance ({time_str})")
+                elif m.event_type == MemoryType.MAINTENANCE_OFF:
+                    memory_parts.append(f"{m.detail} left maintenance ({time_str})")
             if memory_parts:
                 parts.append("Recent history: " + "; ".join(memory_parts) + ".")
 

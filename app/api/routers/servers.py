@@ -7,7 +7,8 @@ import aiosqlite
 
 from app.api.dependencies import get_db
 from app.api.models import DailyStatOut, ServerCreate, ServerOut, ServerUpdate
-from app.infrastructure.repositories import server_repo
+from app.domain.memory import MemoryType
+from app.infrastructure.repositories import memory_repo, server_repo
 
 router = APIRouter()
 
@@ -86,4 +87,6 @@ async def toggle_maintenance(
     srv = await server_repo.toggle_maintenance(db, server_id)
     if srv is None:
         raise HTTPException(status_code=404, detail="Server not found")
+    mem_type = MemoryType.MAINTENANCE_ON if srv.maintenance_mode else MemoryType.MAINTENANCE_OFF
+    await memory_repo.add_memory(db, mem_type, srv.name)
     return await _server_with_stats(db, srv)

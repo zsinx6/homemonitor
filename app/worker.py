@@ -42,7 +42,15 @@ async def monitor_loop(db_path: str) -> None:
         async with _lock:
             try:
                 async with aiosqlite.connect(db_path) as db:
-                    await service.run_cycle(db)
+                    await asyncio.wait_for(
+                        service.run_cycle(db),
+                        timeout=C.MONITOR_CYCLE_TIMEOUT_SECONDS,
+                    )
+            except asyncio.TimeoutError:
+                logger.error(
+                    "Monitor cycle exceeded %ds timeout — skipping this tick.",
+                    C.MONITOR_CYCLE_TIMEOUT_SECONDS,
+                )
             except asyncio.CancelledError:
                 raise
             except Exception:

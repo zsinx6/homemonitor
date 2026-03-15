@@ -128,7 +128,14 @@ class GeminiPhraseService(PhraseSelector):
 
         response = await self._model.generate_content_async(prompt)
         text = response.text.strip().strip("\"'")
-        return text[:120]
+        text = response.text.strip()
+        if len(text) > 120:
+            # Truncate at word boundary so we don't cut mid-word
+            text = text[:120]
+            last_space = text.rfind(" ")
+            if last_space > 80:
+                text = text[:last_space]
+        return text
 
 
 class LLMChatService:

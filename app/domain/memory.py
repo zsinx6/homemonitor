@@ -22,18 +22,22 @@ class MemoryType:
     DEATH = "death"
     REVIVAL = "revival"
     RENAME = "rename"
+    MAINTENANCE_ON = "maintenance_on"
+    MAINTENANCE_OFF = "maintenance_off"
 
     # Human-readable labels and icons for the UI
     LABELS: dict[str, tuple[str, str]] = {
-        SERVER_DOWN:     ("🔴", "went DOWN"),
-        SERVER_RECOVERY: ("🟢", "came back UP"),
-        TASK_COMPLETE:   ("✅", "Task completed"),
-        BACKUP:          ("💾", "Backup ran"),
-        LEVEL_UP:        ("⬆️", "Level up"),
-        DIGIVOLUTION:    ("✨", "Digivolved"),
-        DEATH:           ("💀", "Fell in battle"),
-        REVIVAL:         ("💫", "Was revived"),
-        RENAME:          ("✎", "Renamed to"),
+        SERVER_DOWN:      ("🔴", "went DOWN"),
+        SERVER_RECOVERY:  ("🟢", "came back UP"),
+        TASK_COMPLETE:    ("✅", "Task completed"),
+        BACKUP:           ("💾", "Backup ran"),
+        LEVEL_UP:         ("⬆️", "Level up"),
+        DIGIVOLUTION:     ("✨", "Digivolved"),
+        DEATH:            ("💀", "Fell in battle"),
+        REVIVAL:          ("💫", "Was revived"),
+        RENAME:           ("✎", "Renamed to"),
+        MAINTENANCE_ON:   ("🔧", "Maintenance ON"),
+        MAINTENANCE_OFF:  ("🔧", "Maintenance OFF"),
     }
 
 

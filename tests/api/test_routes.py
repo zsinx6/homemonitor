@@ -631,3 +631,46 @@ class TestMemories:
         # Newest (Second) should be first
         assert memories[0]["detail"] == "Second"
         assert memories[1]["detail"] == "First"
+
+
+class TestQoLFixes:
+    """Tests for QoL fixes: maintenance memory, server edit."""
+
+    async def test_maintenance_toggle_records_memory(self, client):
+        r = await client.post("/api/servers", json={"name": "db", "address": "192.168.1.10", "type": "ping"})
+        sid = r.json()["id"]
+        # Toggle on
+        await client.patch(f"/api/servers/{sid}/maintenance")
+        memories = (await client.get("/api/memories")).json()["memories"]
+        types = [m["event_type"] for m in memories]
+        assert "maintenance_on" in types
+
+    async def test_maintenance_toggle_off_records_memory(self, client):
+        r = await client.post("/api/servers", json={"name": "db2", "address": "192.168.1.11", "type": "ping"})
+        sid = r.json()["id"]
+        # Toggle on then off
+        await client.patch(f"/api/servers/{sid}/maintenance")
+        await client.patch(f"/api/servers/{sid}/maintenance")
+        memories = (await client.get("/api/memories")).json()["memories"]
+        types = [m["event_type"] for m in memories]
+        assert "maintenance_off" in types
+
+    async def test_server_edit_updates_name(self, client):
+        r = await client.post("/api/servers", json={"name": "old", "address": "192.168.1.20", "type": "ping"})
+        sid = r.json()["id"]
+        r2 = await client.put(f"/api/servers/{sid}", json={"name": "new", "address": "192.168.1.20", "type": "ping"})
+        assert r2.status_code == 200
+        assert r2.json()["name"] == "new"
+
+    async def test_server_edit_unknown_id_returns_404(self, client):
+        r = await client.put("/api/servers/9999", json={"name": "x", "address": "192.168.1.99", "type": "ping"})
+        assert r.status_code == 404
+
+    async def test_maintenance_memory_has_server_name(self, client):
+        r = await client.post("/api/servers", json={"name": "redis", "address": "192.168.1.30", "type": "ping"})
+        sid = r.json()["id"]
+        await client.patch(f"/api/servers/{sid}/maintenance")
+        memories = (await client.get("/api/memories")).json()["memories"]
+        maint = [m for m in memories if m["event_type"] == "maintenance_on"]
+        assert len(maint) == 1
+        assert maint[0]["detail"] == "redis"

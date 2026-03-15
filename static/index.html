@@ -565,7 +565,7 @@
 
 <header id="pet-header">
   <div id="face-area">
-    <pre id="digimon-face" class="status-happy" title="Click to pet!">
+    <pre id="digimon-face" class="status-happy" title="Click to pet!" aria-label="Digimon pet — happy">
   *
 (ᴗ)
  ‾</pre>
@@ -662,7 +662,7 @@
         </select>
       </div>
     </div>
-    <div id="srv-error" class="form-error"></div>
+    <div id="srv-error" class="form-error" role="alert" aria-live="polite"></div>
     <button class="nes-btn is-primary" onclick="addServer()">ADD SERVER</button>
   </div>
 </div>
@@ -684,7 +684,7 @@
              placeholder="Fix nginx backup" maxlength="500"
              onkeydown="if(event.key==='Enter') addTask()">
     </div>
-    <div id="task-error" class="form-error"></div>
+    <div id="task-error" class="form-error" role="alert" aria-live="polite"></div>
     <button class="nes-btn is-primary" onclick="addTask()">ADD TASK</button>
   </div>
 </div>
@@ -742,6 +742,43 @@
   <div id="memory-list">
     <div style="font-size:8px;color:var(--grey);text-align:center;padding:20px 0">
       No memories yet. Start monitoring to build history.
+    </div>
+  </div>
+</div>
+
+<!-- =====================================================================
+     EDIT SERVER OVERLAY
+===================================================================== -->
+<div id="edit-server-overlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:1000;overflow-y:auto;padding:16px"
+     onclick="if(event.target===this) closeEditServer()">
+  <div style="max-width:480px;margin:40px auto;background:var(--card);border:2px solid var(--border);padding:16px">
+    <h3 style="font-size:9px;color:var(--green);margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:8px">✎ EDIT SERVER</h3>
+    <input type="hidden" id="edit-srv-id">
+    <div class="form-row">
+      <label class="form-label" for="edit-srv-name">NAME</label>
+      <input id="edit-srv-name" type="text" class="nes-input" placeholder="nginx" maxlength="100">
+    </div>
+    <div class="form-row">
+      <label class="form-label" for="edit-srv-addr">ADDRESS (URL or IP)</label>
+      <input id="edit-srv-addr" type="text" class="nes-input" placeholder="https://example.com" maxlength="500">
+    </div>
+    <div class="form-row">
+      <label class="form-label" for="edit-srv-port">PORT (optional)</label>
+      <input id="edit-srv-port" type="number" class="nes-input" placeholder="80" min="1" max="65535">
+    </div>
+    <div class="form-row">
+      <label class="form-label" for="edit-srv-type">TYPE</label>
+      <div class="nes-select">
+        <select id="edit-srv-type">
+          <option value="http">HTTP</option>
+          <option value="ping">PING</option>
+        </select>
+      </div>
+    </div>
+    <div id="edit-srv-error" class="form-error" role="alert"></div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="nes-btn is-primary" onclick="saveServerEdit()">SAVE</button>
+      <button class="nes-btn" onclick="closeEditServer()">CANCEL</button>
     </div>
   </div>
 </div>
@@ -815,6 +852,8 @@ const state = {
   prevHp: null,
   prevExp: null,
   prevLevel: null,
+  memoriesOffset: 0,
+  memoriesTotal: 0,
 };
 
 /* =====================================================================
@@ -894,6 +933,10 @@ function renderPet(pet, lastEvent) {
 
   // Swap status class
   face.className = `status-${status}`;
+
+  // Keep aria-label in sync for accessibility
+  const petName = pet.name || (pet.evolution || "Bitmon");
+  face.setAttribute("aria-label", `${petName} — ${status}`);
 
   // Pet species / level / stage / next evolution hint
   document.getElementById("pet-species").textContent = (pet.evolution || "Bitmon").toUpperCase();
@@ -1047,6 +1090,8 @@ function renderServers(servers) {
     <button class="nes-btn ${isMaint ? "is-warning" : ""}" style="font-size:6px!important;padding:2px 6px;margin-left:4px"
             title="${isMaint ? "Disable maintenance" : "Enable maintenance"}"
             onclick="toggleMaintenance(${s.id})">🔧</button>
+    <button class="nes-btn" style="font-size:6px!important;padding:2px 6px;margin-left:4px"
+            title="Edit server" onclick="openEditServer(${s.id})">✎</button>
     <button class="nes-btn is-error" style="font-size:6px!important;padding:2px 6px;margin-left:4px"
             onclick="deleteServer(${s.id})">✕</button>
   </div>
@@ -1109,15 +1154,17 @@ ${completed.map(t => `
    RENDER MEMORIES (History tab)
 ===================================================================== */
 const MEMORY_META = {
-  server_down:     { icon: "🔴", label: "went DOWN" },
-  server_recovery: { icon: "🟢", label: "came back UP" },
-  task_complete:   { icon: "✅", label: "Task done" },
-  backup:          { icon: "💾", label: "Backup ran" },
-  level_up:        { icon: "⬆️", label: "Level up →" },
-  digivolution:    { icon: "✨", label: "Digivolved →" },
-  death:           { icon: "💀", label: "Fell in battle" },
-  revival:         { icon: "💫", label: "Revived" },
-  rename:          { icon: "✎", label: "Renamed →" },
+  server_down:      { icon: "🔴", label: "went DOWN" },
+  server_recovery:  { icon: "🟢", label: "came back UP" },
+  task_complete:    { icon: "✅", label: "Task done" },
+  backup:           { icon: "💾", label: "Backup ran" },
+  level_up:         { icon: "⬆️", label: "Level up →" },
+  digivolution:     { icon: "✨", label: "Digivolved →" },
+  death:            { icon: "💀", label: "Fell in battle" },
+  revival:          { icon: "💫", label: "Revived" },
+  rename:           { icon: "✎", label: "Renamed →" },
+  maintenance_on:   { icon: "🔧", label: "Maintenance ON →" },
+  maintenance_off:  { icon: "🔧", label: "Maintenance OFF →" },
 };
 
 function relTime(isoStr) {
@@ -1128,7 +1175,9 @@ function relTime(isoStr) {
   return `${Math.floor(diff/86400)}d ago`;
 }
 
-function renderMemories(data) {
+const MEMORY_PAGE_SIZE = 25;
+
+function renderMemories(data, append = false) {
   // Update summary counters
   const s = data.summary || {};
   document.getElementById("hist-total").textContent   = data.total ?? 0;
@@ -1136,21 +1185,56 @@ function renderMemories(data) {
   document.getElementById("hist-tasks").textContent   = (s.task_complete || 0);
   document.getElementById("hist-backups").textContent = (s.backup || 0);
 
+  state.memoriesTotal  = data.total ?? 0;
+
   const list = document.getElementById("memory-list");
   if (!data.memories || data.memories.length === 0) {
-    list.innerHTML = '<div style="font-size:8px;color:var(--grey);text-align:center;padding:20px 0">No memories yet. Start monitoring to build history.</div>';
+    if (!append) {
+      state.memoriesOffset = 0;
+      list.innerHTML = '<div style="font-size:8px;color:var(--grey);text-align:center;padding:20px 0">No memories yet. Start monitoring to build history.</div>';
+    }
     return;
   }
 
-  list.innerHTML = data.memories.map(m => {
-    const meta  = MEMORY_META[m.event_type] || { icon: "❓", label: m.event_type };
-    const detail = m.detail ? `<span class="memory-detail"> ${m.detail}</span>` : "";
+  const rows = data.memories.map(m => {
+    const meta   = MEMORY_META[m.event_type] || { icon: "❓", label: m.event_type };
+    const detail = m.detail ? `<span class="memory-detail"> ${escHtml(m.detail)}</span>` : "";
     return `<div class="memory-row">
       <span class="memory-icon">${meta.icon}</span>
-      <span class="memory-text">${meta.label}${detail}</span>
+      <span class="memory-text">${escHtml(meta.label)}${detail}</span>
       <span class="memory-time">${relTime(m.occurred_at)}</span>
     </div>`;
   }).join("");
+
+  if (append) {
+    // Remove existing "Load more" button before appending
+    const existing = list.querySelector("#load-more-btn");
+    if (existing) existing.remove();
+    list.insertAdjacentHTML("beforeend", rows);
+  } else {
+    state.memoriesOffset = 0;
+    list.innerHTML = rows;
+  }
+
+  // Update offset
+  state.memoriesOffset += data.memories.length;
+
+  // Add "Load more" button if there are more records
+  if (state.memoriesOffset < state.memoriesTotal) {
+    list.insertAdjacentHTML("beforeend",
+      `<div id="load-more-btn" style="text-align:center;margin-top:8px">
+        <button class="nes-btn" style="font-size:7px!important;padding:4px 12px"
+                onclick="loadMoreMemories()">⬇ LOAD MORE (${state.memoriesTotal - state.memoriesOffset} left)</button>
+      </div>`
+    );
+  }
+}
+
+async function loadMoreMemories() {
+  try {
+    const data = await api("GET", `/api/memories?limit=${MEMORY_PAGE_SIZE}&offset=${state.memoriesOffset}`);
+    renderMemories(data, true);
+  } catch (_) {}
 }
 
 async function poll() {
@@ -1159,7 +1243,7 @@ async function poll() {
     api("GET", "/api/pet"),
     api("GET", "/api/servers"),
     api("GET", "/api/tasks"),
-    api("GET", "/api/memories?limit=50"),
+    api("GET", `/api/memories?limit=${MEMORY_PAGE_SIZE}`),
   ]);
 
   const petResult      = petR.status      === "fulfilled" ? petR.value      : null;
@@ -1236,6 +1320,43 @@ async function toggleMaintenance(id) {
     await api("PATCH", `/api/servers/${id}/maintenance`);
     await poll();
   } catch (_) {}
+}
+
+function openEditServer(id) {
+  const srv = state.servers.find(s => s.id === id);
+  if (!srv) return;
+  document.getElementById("edit-srv-id").value    = srv.id;
+  document.getElementById("edit-srv-name").value  = srv.name;
+  document.getElementById("edit-srv-addr").value  = srv.address;
+  document.getElementById("edit-srv-port").value  = srv.port || "";
+  document.getElementById("edit-srv-type").value  = srv.type;
+  document.getElementById("edit-srv-error").textContent = "";
+  document.getElementById("edit-server-overlay").style.display = "block";
+  document.getElementById("edit-srv-name").focus();
+}
+
+function closeEditServer() {
+  document.getElementById("edit-server-overlay").style.display = "none";
+}
+
+async function saveServerEdit() {
+  const id      = parseInt(document.getElementById("edit-srv-id").value);
+  const name    = document.getElementById("edit-srv-name").value.trim();
+  const address = document.getElementById("edit-srv-addr").value.trim();
+  const portVal = document.getElementById("edit-srv-port").value.trim();
+  const type    = document.getElementById("edit-srv-type").value;
+  const errEl   = document.getElementById("edit-srv-error");
+  errEl.textContent = "";
+  if (!name || !address) { errEl.textContent = "Name and address are required."; return; }
+  const body = { name, address, type };
+  if (portVal) body.port = parseInt(portVal);
+  try {
+    await api("PUT", `/api/servers/${id}`, body);
+    closeEditServer();
+    await poll();
+  } catch (e) {
+    errEl.textContent = e.isValidation ? e.message : "Save failed. Check inputs.";
+  }
 }
 
 async function addTask() {
