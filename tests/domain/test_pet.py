@@ -12,6 +12,7 @@ from app.domain.pet import (
     apply_backup,
     derive_status,
     get_evolution,
+    get_next_evolution_level,
 )
 
 
@@ -302,36 +303,61 @@ class TestApplyBackup:
 # ---------------------------------------------------------------------------
 
 class TestGetEvolution:
-    def test_level_1_is_koromon(self):
+    def test_level_1_is_pixit_fresh(self):
         species, stage = get_evolution(1)
-        assert species == "Koromon"
+        assert species == "Pixit"
+        assert stage == "fresh"
+
+    def test_level_2_is_nybbit_in_training(self):
+        species, stage = get_evolution(2)
+        assert species == "Nybbit"
         assert stage == "in-training"
 
     def test_level_4_still_in_training(self):
         species, stage = get_evolution(4)
-        assert species == "Koromon"
+        assert species == "Nybbit"
 
-    def test_level_5_is_agumon(self):
+    def test_level_5_is_packamon_rookie(self):
         species, stage = get_evolution(5)
-        assert species == "Agumon"
+        assert species == "Packamon"
         assert stage == "rookie"
 
-    def test_level_15_is_greymon(self):
+    def test_level_15_is_hostimon_champion(self):
         species, stage = get_evolution(15)
-        assert species == "Greymon"
+        assert species == "Hostimon"
         assert stage == "champion"
 
-    def test_level_30_is_metalgreymon(self):
+    def test_level_30_is_kernelmon_perfect(self):
         species, stage = get_evolution(30)
-        assert species == "MetalGreymon"
-        assert stage == "ultimate"
+        assert species == "Kernelmon"
+        assert stage == "perfect"
 
-    def test_level_50_is_wargreymon(self):
-        species, stage = get_evolution(50)
-        assert species == "WarGreymon"
-        assert stage == "mega"
-
-    def test_very_high_level_is_wargreymon(self):
+    def test_very_high_level_is_kernelmon_perfect(self):
         species, stage = get_evolution(999)
-        assert species == "WarGreymon"
-        assert stage == "mega"
+        assert species == "Kernelmon"
+        assert stage == "perfect"
+
+
+class TestGetNextEvolutionLevel:
+    def test_fresh_next_is_2(self):
+        assert get_next_evolution_level(1) == 2
+
+    def test_in_training_next_is_5(self):
+        assert get_next_evolution_level(3) == 5
+
+    def test_rookie_next_is_15(self):
+        assert get_next_evolution_level(10) == 15
+
+    def test_champion_next_is_30(self):
+        assert get_next_evolution_level(20) == 30
+
+    def test_perfect_has_no_next(self):
+        assert get_next_evolution_level(50) is None
+
+    def test_name_syncs_on_level_up(self):
+        """Pet name should update to new species when a level-up changes the tier."""
+        # Level 1 (Pixit fresh) gaining enough EXP to reach level 2 (Nybbit in-training)
+        pet = _pet(level=1, exp=99, max_exp=100, name="Pixit")
+        result = apply_monitor_cycle(pet, [], [])
+        assert result.level == 2
+        assert result.name == "Nybbit"

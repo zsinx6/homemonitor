@@ -21,12 +21,14 @@ class TestPetRoutes:
         assert "hp_max" in data
         assert "evolution" in data
         assert "evolution_stage" in data
+        assert "evolution_next_level" in data
 
     async def test_get_pet_evolution_field(self, client):
         data = (await client.get("/api/pet")).json()
-        # Fresh pet starts at level 1 — should be Koromon (in-training)
-        assert data["evolution"] == "Koromon"
-        assert data["evolution_stage"] == "in-training"
+        # Fresh pet starts at level 1 — Pixit (fresh stage)
+        assert data["evolution"] == "Pixit"
+        assert data["evolution_stage"] == "fresh"
+        assert data["evolution_next_level"] == 2
 
     async def test_get_pet_last_event_field_present(self, client):
         data = (await client.get("/api/pet")).json()

@@ -23,6 +23,7 @@ class PetResponse(BaseModel):
     phrase: str
     evolution: str
     evolution_stage: str
+    evolution_next_level: Optional[int]
     last_event: Optional[str]
     last_backup_date: Optional[datetime]
     last_updated: datetime

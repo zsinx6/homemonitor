@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 
 _SEED_PET_SQL = """
 INSERT OR IGNORE INTO pet_state (id, name, level, exp, max_exp, hp, last_interaction_date, last_updated)
-VALUES (1, 'Agumon', 1, 0, 100, 10, datetime('now', '-1 hour'), datetime('now'));
+VALUES (1, 'Pixit', 1, 0, 100, 10, datetime('now', '-1 hour'), datetime('now'));
 """
 
 

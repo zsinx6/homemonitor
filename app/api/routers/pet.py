@@ -8,7 +8,7 @@ import aiosqlite
 from app.api.dependencies import get_db, get_pet_service, get_phrase_selector
 from app.api.models import PetBackupResponse, PetInteractResponse, PetResponse
 from app.domain import constants as C
-from app.domain.pet import derive_status, get_evolution
+from app.domain.pet import derive_status, get_evolution, get_next_evolution_level
 from app.domain.phrases import PhraseContext
 from app.infrastructure.repositories import pet_repo, server_repo
 
@@ -31,6 +31,7 @@ async def _build_pet_response(db, phrase_selector) -> PetResponse:
     any_down = any(s.status == "DOWN" for s in servers)
     status = derive_status(pet, any_server_down=any_down)
     species, stage = get_evolution(pet.level)
+    next_evo_level = get_next_evolution_level(pet.level)
 
     # Decode last_event — may carry an encoded server name as detail
     event_type, event_detail = _decode_event(pet.last_event)
@@ -81,6 +82,7 @@ async def _build_pet_response(db, phrase_selector) -> PetResponse:
         phrase=phrase,
         evolution=species,
         evolution_stage=stage,
+        evolution_next_level=next_evo_level,
         last_event=clean_event,
         last_backup_date=pet.last_backup_date,
         last_updated=pet.last_updated,

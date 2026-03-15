@@ -464,18 +464,16 @@
 <header id="pet-header">
   <div id="face-area">
     <pre id="digimon-face" class="status-happy" title="Click to pet!">
-  ▲
-╠══════╣
-║ ◆  ◆ ║
-║  ⚡  ║
-║  ᴗ   ║
-╚══════╝</pre>
+  *
+(ᴗ)
+ ‾</pre>
   </div>
 
   <div id="stats-panel">
     <div id="pet-name-level">
-      <span id="pet-species">AGUMON</span> &nbsp; LV.<span id="pet-level">1</span>
-      <span id="pet-stage" style="display:block;font-size:7px;letter-spacing:2px;color:var(--grey)">ROOKIE</span>
+      <span id="pet-species">PIXIT</span> &nbsp; LV.<span id="pet-level">1</span>
+      <span id="pet-stage" style="display:block;font-size:7px;letter-spacing:2px;color:var(--grey)">FRESH</span>
+      <span id="pet-next-evo" style="display:block;font-size:6px;color:var(--grey);opacity:0.7">→ LV.2</span>
     </div>
 
     <div>
@@ -587,20 +585,54 @@
      FACE DEFINITIONS
 ===================================================================== -->
 <script>
-const CREST = {
-  "in-training": "   •",
-  "rookie":      "   ▲",
-  "champion":    " ▲▲▲",
-  "ultimate":    " ⊕⊕⊕",
-  "mega":        " ◆✦◆",
-};
-
-const FACE_BODY = {
-  happy:   "\n╠══════╣\n║ ◆  ◆ ║\n║  ⚡  ║\n║  ᴗ   ║\n╚══════╝",
-  lonely:  "\n╠══════╣\n║ ─  ─ ║\n║  ...  ║\n║  ___  ║\n╚══════╝",
-  sad:     "\n╠══════╣\n║ ╥  ╥ ║\n║   ≈  ║\n║  ︵  ║\n╚══════╝",
-  injured: "\n╠══════╣\n║ ×  × ║\n║  ⚡  ║\n║  _/‾ ║\n╚══════╝",
-  critical:"\n╠══════╣\n║ ✕  ✕ ║\n║  !!! ║\n║  ___ ║\n╚══════╝",
+// ---------------------------------------------------------------------------
+// STAGE_FACES — per-stage × per-status ASCII art
+//
+// To add a new evolution stage:
+//   1. Add it to EVOLUTION_TIERS in app/domain/constants.py
+//   2. Add a matching key here with happy/lonely/sad/injured/critical variants
+// ---------------------------------------------------------------------------
+const STAGE_FACES = {
+  // Pixit — Fresh (level 1): a tiny data spark
+  "fresh": {
+    happy:    "  *\n(ᴗ)\n ‾",
+    lonely:   "  *\n(-)\n ‾",
+    sad:      "  *\n(╥)\n ‾",
+    injured:  "  *\n(×)\n ‾",
+    critical: "  ✕\n(✕)\n !!",
+  },
+  // Nybbit — In-Training (levels 2-4): a nibble-sized sprite
+  "in-training": {
+    happy:    "  ○\n╔═══╗\n║ ᴗ ║\n╚═══╝",
+    lonely:   "  ○\n╔═══╗\n║ - ║\n╚═══╝",
+    sad:      "  ○\n╔═══╗\n║ ╥ ║\n╚═══╝",
+    injured:  "  ✕\n╔═══╗\n║ × ║\n╚═══╝",
+    critical: "  ✕\n╔═══╗\n║ ✕ ║\n╚═══╝",
+  },
+  // Packamon — Rookie (levels 5-14): a compact packet carrier
+  "rookie": {
+    happy:    "  ▪\n╔═════╗\n║ ◆ ◆ ║\n║  ⚡ ║\n║  ᴗ  ║\n╚═════╝",
+    lonely:   "  ▪\n╔═════╗\n║ ─ ─ ║\n║  ...║\n║  _  ║\n╚═════╝",
+    sad:      "  ▾\n╔═════╗\n║ ╥ ╥ ║\n║  ≈  ║\n║  ︵ ║\n╚═════╝",
+    injured:  "  ▾\n╔═════╗\n║ × × ║\n║  ⚡ ║\n║ _/‾ ║\n╚═════╝",
+    critical: "  ✕\n╔═════╗\n║ ✕ ✕ ║\n║  !!!║\n║  _  ║\n╚═════╝",
+  },
+  // Hostimon — Champion (levels 15-29): a formidable network guardian
+  "champion": {
+    happy:    "  ▲\n╠══════╣\n║ ◆  ◆ ║\n║  ⚡  ║\n║  ᴗ   ║\n╚══════╝",
+    lonely:   "  △\n╠══════╣\n║ ─  ─ ║\n║  ...  ║\n║  ___  ║\n╚══════╝",
+    sad:      "  ▽\n╠══════╣\n║ ╥  ╥ ║\n║   ≈  ║\n║  ︵  ║\n╚══════╝",
+    injured:  "  ▽\n╠══════╣\n║ ×  × ║\n║  ⚡  ║\n║  _/‾ ║\n╚══════╝",
+    critical: "  ✕\n╠══════╣\n║ ✕  ✕ ║\n║  !!! ║\n║  ___ ║\n╚══════╝",
+  },
+  // Kernelmon — Perfect (level 30+): the ultimate system daemon
+  "perfect": {
+    happy:    " ╥╥\n╠══════╣\n║⊛    ⊛║\n║  ★   ║\n║  ᴗ   ║\n╚══════╝",
+    lonely:   " ╥╥\n╠══════╣\n║⊛    ⊛║\n║  ...  ║\n║  ___  ║\n╚══════╝",
+    sad:      " ╥▽\n╠══════╣\n║⊛    ⊛║\n║   ≈  ║\n║  ︵  ║\n╚══════╝",
+    injured:  " ╥▽\n╠══════╣\n║×    ×║\n║  ⚡  ║\n║  _/‾ ║\n╚══════╝",
+    critical: " ✕✕\n╠══════╣\n║✕    ✕║\n║  !!!  ║\n║  ___  ║\n╚══════╝",
+  },
 };
 
 /* =====================================================================
@@ -675,20 +707,27 @@ function setSpeech(text) {
 function renderPet(pet, lastEvent) {
   const face   = document.getElementById("digimon-face");
   const status = pet.status;
-  const stage  = pet.evolution_stage || "rookie";
+  const stage  = pet.evolution_stage || "fresh";
 
-  // Build face from evolution crest + status expression
-  const crest = CREST[stage] || CREST["rookie"];
-  const body  = FACE_BODY[status] || FACE_BODY.happy;
-  face.textContent = crest + body;
+  // Look up stage faces (fallback to rookie if stage not yet defined)
+  const stageFaces = STAGE_FACES[stage] || STAGE_FACES["rookie"];
+  face.textContent = stageFaces[status] || stageFaces.happy;
 
   // Swap status class
   face.className = `status-${status}`;
 
-  // Pet species / level / stage
-  document.getElementById("pet-species").textContent = (pet.evolution || "AGUMON").toUpperCase();
+  // Pet species / level / stage / next evolution hint
+  document.getElementById("pet-species").textContent = (pet.evolution || "Pixit").toUpperCase();
   document.getElementById("pet-level").textContent = pet.level;
   document.getElementById("pet-stage").textContent = stage.toUpperCase();
+  const nextEvoEl = document.getElementById("pet-next-evo");
+  if (pet.evolution_next_level != null) {
+    nextEvoEl.textContent = "→ LV." + pet.evolution_next_level;
+    nextEvoEl.style.display = "block";
+  } else {
+    nextEvoEl.textContent = "✦ PERFECT ✦";
+    nextEvoEl.style.display = "block";
+  }
 
   // HP pips
   const hpBar = document.getElementById("hp-bar");

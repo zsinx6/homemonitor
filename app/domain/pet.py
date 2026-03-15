@@ -35,11 +35,16 @@ def _clamp(value: int, low: int, high: int) -> int:
 
 
 def _apply_exp_gain(pet: Pet, amount: int) -> Pet:
-    """Add EXP, handle level-up with carry-over, return updated Pet."""
+    """Add EXP, handle level-up with carry-over, return updated Pet.
+
+    On level-up the pet's name is updated to match the new species so the
+    stored name always reflects the current evolutionary stage.
+    """
     new_exp = max(C.EXP_MIN, pet.exp + amount)
     level = pet.level
     max_exp = pet.max_exp
     last_event = pet.last_event
+    name = pet.name
 
     while new_exp >= max_exp:
         new_exp -= max_exp
@@ -47,7 +52,13 @@ def _apply_exp_gain(pet: Pet, amount: int) -> Pet:
         max_exp = round(max_exp * C.LEVEL_UP_SCALE)
         last_event = "level_up"
 
-    return replace(pet, exp=new_exp, level=level, max_exp=max_exp, last_event=last_event)
+    # Keep name in sync with current species after any level change
+    if level != pet.level:
+        species, _ = get_evolution(level)
+        name = species
+
+    return replace(pet, exp=new_exp, level=level, max_exp=max_exp,
+                   last_event=last_event, name=name)
 
 
 def _is_backup_overdue(pet: Pet) -> bool:
@@ -151,8 +162,18 @@ def get_evolution(level: int) -> tuple[str, str]:
 
     Uses EVOLUTION_TIERS from constants; falls back to the highest tier.
     """
-    for min_l, max_l, species, stage in C.EVOLUTION_TIERS:
-        if min_l <= level <= max_l:
-            return species, stage
+    for tier in C.EVOLUTION_TIERS:
+        if tier["min_level"] <= level <= tier["max_level"]:
+            return tier["species"], tier["stage"]
     last = C.EVOLUTION_TIERS[-1]
-    return last[2], last[3]
+    return last["species"], last["stage"]
+
+
+def get_next_evolution_level(level: int) -> int | None:
+    """Return the level at which the next evolution occurs, or None if at max tier."""
+    for i, tier in enumerate(C.EVOLUTION_TIERS):
+        if tier["min_level"] <= level <= tier["max_level"]:
+            if i + 1 < len(C.EVOLUTION_TIERS):
+                return C.EVOLUTION_TIERS[i + 1]["min_level"]
+            return None  # already at highest tier
+    return None

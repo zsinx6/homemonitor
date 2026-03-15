@@ -49,11 +49,18 @@ PING_TIMEOUT_SECONDS = 3
 # Task display cap
 COMPLETED_TASKS_DISPLAY_CAP = 20
 
-# Evolution tiers: (min_level, max_level, species_name, stage_name)
+# ---------------------------------------------------------------------------
+# Evolution tiers — original Digimon line created for this app
+#
+# To add a new tier (e.g. Ultra after perfect):
+#   1. Add a dict entry here BEFORE the last entry, keeping min_level sequential.
+#   2. Add matching face art in static/index.html → STAGE_FACES[stage].
+#   3. Run pytest to verify nothing broke.
+# ---------------------------------------------------------------------------
 EVOLUTION_TIERS = [
-    (1,  4,    "Koromon",      "in-training"),
-    (5,  14,   "Agumon",       "rookie"),
-    (15, 29,   "Greymon",      "champion"),
-    (30, 49,   "MetalGreymon", "ultimate"),
-    (50, 9999, "WarGreymon",   "mega"),
+    {"min_level": 1,  "max_level": 1,    "species": "Pixit",    "stage": "fresh"},
+    {"min_level": 2,  "max_level": 4,    "species": "Nybbit",   "stage": "in-training"},
+    {"min_level": 5,  "max_level": 14,   "species": "Packamon", "stage": "rookie"},
+    {"min_level": 15, "max_level": 29,   "species": "Hostimon", "stage": "champion"},
+    {"min_level": 30, "max_level": 9999, "species": "Kernelmon","stage": "perfect"},
 ]
