@@ -33,18 +33,7 @@ async def get_db(request: Request) -> AsyncGenerator[aiosqlite.Connection, None]
 def get_phrase_selector() -> PhraseSelector:
     global _phrase_selector
     if _phrase_selector is None:
-        api_key = os.getenv("GEMINI_API_KEY")
-        if api_key:
-            try:
-                from app.services.llm_service import GeminiPhraseService  # noqa: PLC0415
-                personality = get_config().personality.to_prompt()
-                _phrase_selector = GeminiPhraseService(api_key, personality_prompt=personality)
-                logger.info("Gemini phrase service enabled (gemini-1.5-flash).")
-            except Exception as exc:
-                logger.warning("Could not init GeminiPhraseService (%s); using static.", exc)
-                _phrase_selector = StaticPhraseService()
-        else:
-            _phrase_selector = StaticPhraseService()
+        _phrase_selector = StaticPhraseService()
     return _phrase_selector
 
 
