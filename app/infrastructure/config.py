@@ -11,7 +11,7 @@ Example ``digimonitor.toml``::
     hp_max = 15
 
     [monitoring]
-    interval_seconds = 30
+    interval_seconds = 600
 
     [personality]
     initial_name = "Sparky"

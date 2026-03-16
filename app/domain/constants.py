@@ -43,7 +43,7 @@ BACKUP_COOLDOWN_HOURS = 1       # minimum hours between backup rewards
 BACKUP_OVERDUE_DAYS = 30
 
 # Monitoring
-MONITOR_INTERVAL_SECONDS = 60
+MONITOR_INTERVAL_SECONDS = 600
 MONITOR_CYCLE_TIMEOUT_SECONDS = 120   # abort if a cycle takes longer than this
 HTTP_TIMEOUT_SECONDS = 10
 PING_TIMEOUT_SECONDS = 3
