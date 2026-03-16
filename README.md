@@ -15,12 +15,12 @@ Built for a Raspberry Pi Zero 2W. Runs in a browser. Optionally powered by Gemin
 
 ## What it does
 
-- **Monitors HTTP and ping servers** on a configurable interval (default: 60 s)
+- **Monitors HTTP, HTTP+keyword, TCP, and ping servers** on a configurable interval (default: 10 min)
 - **Pet health mechanics** — EXP per healthy cycle, HP loss per downed server per cycle, loneliness drain if you don't interact, HP/EXP rewards for backups and completed tasks
 - **Evolution line** — Bitmon → Nibblemon → Packamon → Hostimon → Kernelmon (level-gated, expandable)
 - **Death & revival** — HP hits 0 → pet dies; revive costs EXP reset and restores 5 HP
 - **Memory / history log** — every significant event (server down, recovery, task done, backup, digivolution, rename, maintenance, death, revival) is persisted and shown in a History tab and fed to the LLM as context
-- **Gemini chat** — optional; when `GEMINI_API_KEY` is set the pet speaks dynamic context-aware phrases and you can chat with it in natural language
+- **Gemini chat** — optional; when `GEMINI_API_KEY` is set you can chat with the pet in natural language; the last 10 significant events are injected as context so the pet remembers what happened
 - **Mobile-first dashboard** — sticky pet header visible at all times, 4 tabs (INFRA / TASKS / MAINT / HIST), no build step, no framework
 
 ---
@@ -63,7 +63,7 @@ python scripts/setup.py --config /etc/digimonitor.toml
 
 ---
 
-
+## Quick start
 
 ```bash
 git clone https://github.com/yourname/homemonitor
@@ -130,7 +130,7 @@ All endpoints are prefixed `/api`.
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/servers` | List all servers with 7-day uptime stats (sorted by position) |
-| `POST` | `/api/servers` | Add a server `{"name", "address", "type": "http"\|"ping", "port"?}` |
+| `POST` | `/api/servers` | Add a server `{"name", "address", "type": "http"\|"http_keyword"\|"tcp"\|"ping", "port"?, "check_params"?}` |
 | `PUT` | `/api/servers/{id}` | Edit server name / address / port / type |
 | `DELETE` | `/api/servers/{id}` | Remove a server |
 | `PATCH` | `/api/servers/{id}/maintenance` | Toggle maintenance mode (pauses HP damage) |
@@ -151,7 +151,7 @@ All endpoints are prefixed `/api`.
 |--------|------|-------------|
 | `GET` | `/api/memories?limit=25&offset=0` | Paginated event log with summary counts |
 | `GET` | `/api/status` | Full context snapshot (used by LLM) |
-| `POST` | `/api/chat` | Chat with the pet `{"message": "How are the servers?"}` |
+| `POST` | `/api/pet/chat` | Chat with the pet `{"message": "How are the servers?"}` |
 
 ### Export / Import
 
@@ -232,11 +232,10 @@ Alerts are sent for:
 
 Set `GEMINI_API_KEY` before starting the server.
 
-- **Dynamic phrases** — the pet reacts to server events with context-aware one-liners (falls back to static phrases on timeout or missing key)
-- **Free-form chat** — ask about your infrastructure, tasks, or just talk to your pet
-- **Memory context** — the last 10 significant events are injected into every LLM prompt so the pet remembers what happened
+- **Free-form chat** — ask about your infrastructure, tasks, or just talk to your pet (`POST /api/pet/chat`)
+- **Memory context** — the last 10 significant events are injected into every prompt so the pet remembers what happened
 
-No key? Everything works — phrases stay static and chat returns a friendly offline message.
+No key? Everything works — chat returns a friendly offline message and the pet uses static phrases.
 
 ---
 
@@ -253,7 +252,7 @@ loneliness_hours = 24
 backup_overdue_days = 30
 
 [monitoring]
-interval_seconds = 60
+interval_seconds = 600
 http_timeout_seconds = 10
 ping_timeout_seconds = 3
 
@@ -285,7 +284,7 @@ Individual constants can also still be edited in `app/domain/constants.py`.
 # Install
 pip install -r requirements.txt
 
-# Run tests (287 tests, ~3 s)
+# Run tests
 pytest
 
 # Run with auto-reload
@@ -305,14 +304,14 @@ app/
     models.py       # Pydantic request/response models
     dependencies.py
   main.py           # App factory + lifespan (DB init, worker start, config load)
-  worker.py         # Background monitor loop (asyncio, 60 s interval)
+  worker.py         # Background monitor loop (asyncio, 10 min interval)
   infrastructure/
     config.py       # TOML config loader — overrides constants + personality + ntfy settings
     notifier.py     # ntfy.sh push notification client
 scripts/
   setup.py          # Interactive first-run wizard — writes digimonitor.toml
 static/
-  index.html        # Single-file SPA — no build step, NES.css pixel theme
+  index.html        # Single-file SPA — no build step, Inter font, dark theme
 tests/
   api/              # HTTP integration tests (AsyncClient + tmp SQLite)
   services/         # Unit tests with mock repos
