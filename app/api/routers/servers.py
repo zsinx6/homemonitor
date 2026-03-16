@@ -1,7 +1,9 @@
 """Servers API routes (CRUD)."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+import asyncio
+
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 import aiosqlite
 
@@ -9,6 +11,7 @@ from app.api.dependencies import get_db
 from app.api.models import DailyStatOut, MoveServerRequest, ServerCreate, ServerOut, ServerUpdate
 from app.domain.memory import MemoryType
 from app.infrastructure.repositories import memory_repo, server_repo
+from app.worker import trigger_cycle
 
 router = APIRouter()
 
@@ -51,11 +54,14 @@ async def list_servers(db: aiosqlite.Connection = Depends(get_db)):
 @router.post("/servers", response_model=ServerOut, status_code=201)
 async def create_server(
     body: ServerCreate,
+    request: Request,
     db: aiosqlite.Connection = Depends(get_db),
 ):
     srv = await server_repo.create_server(
         db, body.name, body.address, body.port, body.type, body.check_params
     )
+    # Fire an immediate check so the new server shows status right away
+    asyncio.create_task(trigger_cycle(request.app.state.db_path))
     return await _server_with_stats(db, srv)
 
 
