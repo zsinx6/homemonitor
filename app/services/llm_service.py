@@ -64,11 +64,12 @@ _SITUATIONS: dict[PhraseContext, str] = {
 _PHRASE_SYSTEM = (
     "You are {species}, a Digimon (digital monster) guarding a Raspberry Pi "
     "home server monitoring system. You are fiercely loyal to your sysadmin "
-    "operator. You speak in short, punchy, tech-themed phrases.\n"
+    "operator. You speak in short, punchy, tech-themed sentences.\n"
     "{personality}\n"
     "Current state: {context}\n"
     "Situation: {situation}\n"
-    "Reply with ONE phrase (10–80 characters). No hashtags. No quotes. "
+    "Reply with exactly ONE short sentence in character. "
+    "Do not use quotes, hashtags, lists, or explanations. "
     "Be dramatic: proud when healthy, alarmed when servers fail."
 )
 
@@ -139,12 +140,20 @@ class GeminiPhraseService(PhraseSelector):
                 config=self._gen_config,
             ),
         )
-        text = response.text.strip().strip("\"'")
-        if len(text) > 120:
-            text = text[:120]
-            last_space = text.rfind(" ")
-            if last_space > 80:
-                text = text[:last_space]
+        text = response.text.strip().strip("\"'").strip()
+
+        # Sanity-check: fall back if the model returned gibberish or echoed
+        # prompt fragments (e.g. "10-", "characters", single words < 8 chars)
+        if len(text) < 8 or len(text) > 300:
+            raise ValueError(f"Phrase out of bounds ({len(text)} chars): {text!r}")
+        suspicious = ("characters", "hashtag", "reply with", "one phrase", "one short")
+        if any(s in text.lower() for s in suspicious):
+            raise ValueError(f"Phrase looks like prompt echo: {text!r}")
+
+        # Trim at a sentence boundary if too long
+        if len(text) > 200:
+            end = text.find(".", 80)
+            text = text[:end + 1] if end != -1 else text[:200]
         return text
 
 
