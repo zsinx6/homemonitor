@@ -79,7 +79,7 @@ _CHAT_SYSTEM = (
     "{personality}\n\n"
     "Current system state:\n{context}\n\n"
     "The sysadmin says: \"{message}\"\n\n"
-    "Respond as {species}. Keep it under 80 words. "
+    "Respond as {species}. Aim for 2-4 sentences (up to 150 words). "
     "If the sysadmin asks about infrastructure, reference the data above accurately. "
     "If you see issues, proactively mention them. "
     "If asked for improvements, be specific and actionable. "
@@ -97,7 +97,7 @@ class GeminiPhraseService(PhraseSelector):
         self._client = genai.Client(api_key=api_key)
         self._gen_config = types.GenerateContentConfig(
             temperature=0.9,
-            max_output_tokens=80,
+            max_output_tokens=150,
         )
         self._fallback = StaticPhraseService()
         self._personality = personality_prompt
@@ -158,7 +158,7 @@ class LLMChatService:
         self._client = genai.Client(api_key=api_key)
         self._gen_config = types.GenerateContentConfig(
             temperature=0.85,
-            max_output_tokens=250,
+            max_output_tokens=600,
         )
         self._personality = personality_prompt
 
