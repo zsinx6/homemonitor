@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DigiMon(itor)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Press+Start+2P&display=swap" rel="stylesheet">
   <style>
     /* =====================================================================
        RESET & BASE
@@ -11,26 +13,33 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:       #1a1a2e;
-      --surface:  #16213e;
-      --border:   #0f3460;
-      --green:    #00ff87;
-      --red:      #ff4757;
-      --yellow:   #ffd32a;
-      --blue:     #00b4d8;
-      --white:    #e8f4f8;
-      --grey:     #4a5568;
-      --gold:     #ffd700;
-      --hp-full:  #00ff87;
-      --hp-empty: #2d3748;
+      --bg:         #0d1117;
+      --surface:    #161b22;
+      --border:     #30363d;
+      --text:       #e6edf3;
+      --text-muted: #8b949e;
+      --green:      #3fb950;
+      --red:        #f85149;
+      --yellow:     #e3b341;
+      --blue:       #58a6ff;
+      --white:      #e6edf3;
+      --grey:       #8b949e;
+      --gold:       #e3b341;
+      --hp-full:    #3fb950;
+      --hp-empty:   #21262d;
+      --card:       #161b22;
+      --pixel:      "Press Start 2P", monospace;
+      --sans:       "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
     }
 
     html { font-size: 16px; }
 
     body {
       background: var(--bg);
-      color: var(--white);
-      font-family: "Press Start 2P", monospace;
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 15px;
+      line-height: 1.5;
       min-height: 100vh;
       overflow-x: hidden;
     }
@@ -43,7 +52,7 @@
       top: 0;
       z-index: 100;
       background: var(--surface);
-      border-bottom: 4px solid var(--border);
+      border-bottom: 1px solid var(--border);
       padding: 16px 20px 12px;
       display: grid;
       grid-template-columns: auto 1fr;
@@ -144,7 +153,7 @@
       100% { filter: brightness(0.5); opacity: 0.7; }
     }
     @keyframes revival-flash {
-      0%   { filter: brightness(0.3); opacity: 0.5; color: var(--grey); }
+      0%   { filter: brightness(0.3); opacity: 0.5; color: var(--text-muted); }
       40%  { filter: brightness(3) drop-shadow(0 0 20px var(--green)); color: var(--green); }
       70%  { filter: brightness(1.5) drop-shadow(0 0 8px var(--green)); }
       100% { filter: brightness(1); opacity: 1; color: inherit; }
@@ -170,7 +179,8 @@
     }
 
     #pet-name-level {
-      font-size: 15px;
+      font-family: var(--pixel);
+      font-size: 13px;
       color: var(--blue);
     }
 
@@ -183,7 +193,8 @@
     .hp-pip {
       width: 18px; height: 18px;
       background: var(--hp-full);
-      border: 2px solid var(--white);
+      border: 1px solid var(--border);
+      border-radius: 3px;
       transition: background 0.3s;
     }
     .hp-pip.empty { background: var(--hp-empty); }
@@ -193,11 +204,12 @@
     .hp-pip.anim-damage { animation: pip-damage 0.4s ease; }
     .hp-pip.anim-heal   { animation: pip-heal 0.4s ease; }
 
-    #exp-label { font-size: 12px; color: var(--grey); }
+    #exp-label { font-size: 13px; color: var(--text-muted); }
 
     #exp-track {
       background: var(--hp-empty);
-      border: 2px solid var(--white);
+      border: 1px solid var(--border);
+      border-radius: 4px;
       height: 18px;
       position: relative;
       overflow: hidden;
@@ -210,14 +222,15 @@
 
     /* Speech bubble */
     #speech-bubble {
-      background: var(--surface);
-      border: 3px solid var(--white);
-      padding: 10px 12px;
-      font-size: 11px;
-      line-height: 1.8;
-      color: var(--white);
-      min-height: 50px;
-      max-height: 260px;
+      background: #1c2128;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 14px;
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--text);
+      min-height: 54px;
+      max-height: 280px;
       overflow-y: auto;
       position: relative;
       word-break: break-word;
@@ -226,9 +239,9 @@
     #speech-bubble::before {
       content: "";
       position: absolute;
-      left: 16px; bottom: -10px;
-      border: 5px solid transparent;
-      border-top-color: var(--white);
+      left: 16px; bottom: -8px;
+      border: 4px solid transparent;
+      border-top-color: var(--border);
     }
     #speech-text {
       opacity: 1;
@@ -252,7 +265,8 @@
     /* Floating EXP text */
     .floating-exp {
       position: fixed;
-      font-size: 10px;
+      font-size: 13px;
+      font-family: var(--sans);
       color: var(--blue);
       pointer-events: none;
       z-index: 999;
@@ -277,13 +291,14 @@
       flex: 1;
       text-align: center;
       padding: 12px 4px;
-      font-size: 12px;
-      color: var(--grey);
-      border-right: 2px solid var(--border);
+      font-family: var(--pixel);
+      font-size: 10px;
+      color: var(--text-muted);
+      border-right: 1px solid var(--border);
       transition: color 0.2s;
     }
     .tab-label:last-child { border-right: none; }
-    .tab-label:hover { color: var(--white); }
+    .tab-label:hover { color: var(--text); }
 
     #tab-infra:checked ~ .tab-nav label[for="tab-infra"],
     #tab-tasks:checked ~ .tab-nav label[for="tab-tasks"],
@@ -313,8 +328,9 @@
 
     .server-card {
       background: var(--surface);
-      border: 3px solid var(--border);
-      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 14px;
       transition: border-color 0.3s;
     }
     .server-card.down { border-color: var(--red); animation: card-pulse 1.5s ease-in-out infinite; }
@@ -344,19 +360,21 @@
       50%       { opacity: 0.4; }
     }
 
-    .server-name  { font-size: 13px; flex: 1; }
-    .server-addr  { font-size: 11px; color: var(--grey); margin-bottom: 6px; }
-    .uptime-label { font-size: 11px; color: var(--grey); margin-bottom: 4px; }
+    .server-name  { font-size: 15px; font-weight: 600; flex: 1; }
+    .server-addr  { font-size: 13px; color: var(--text-muted); margin-bottom: 8px; }
+    .uptime-label { font-size: 13px; color: var(--text-muted); margin-bottom: 4px; }
 
     .uptime-bar-track {
       background: var(--hp-empty);
-      border: 2px solid var(--border);
-      height: 12px;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      height: 10px;
       margin-bottom: 8px;
     }
     .uptime-bar-fill {
       height: 100%;
       background: var(--green);
+      border-radius: 3px;
       transition: width 0.5s ease;
     }
     .uptime-bar-fill.partial  { background: var(--yellow); }
@@ -367,7 +385,7 @@
 
     .uptime-day {
       width: 18px; height: 26px;
-      background: var(--grey);
+      background: var(--border);
       position: relative;
     }
     .uptime-day.green  { background: var(--green); }
@@ -382,11 +400,13 @@
       left: 50%;
       transform: translateX(-50%);
       background: #000;
-      color: var(--white);
-      font-size: 9px;
-      padding: 4px 6px;
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 12px;
+      padding: 4px 8px;
       white-space: nowrap;
-      border: 1px solid var(--white);
+      border: 1px solid var(--border);
+      border-radius: 4px;
       pointer-events: none;
       opacity: 0;
       transition: opacity 0.15s;
@@ -395,8 +415,8 @@
     .uptime-day:hover::after { opacity: 1; }
 
     /* Add server form */
-    #add-server-form { margin-top: 8px; }
-    #add-server-form h3 { font-size: 11px; color: var(--blue); margin-bottom: 12px; }
+    #add-server-form { margin-top: 16px; }
+    #add-server-form h3 { font-size: 15px; font-weight: 600; color: var(--blue); margin-bottom: 14px; }
 
     /* =====================================================================
        TASKS TAB
@@ -419,21 +439,22 @@
       flex-shrink: 0;
     }
 
-    .task-text { font-size: 12px; flex: 1; }
-    .task-text.done { text-decoration: line-through; color: var(--grey); }
+    .task-text { font-size: 15px; flex: 1; }
+    .task-text.done { text-decoration: line-through; color: var(--text-muted); }
     .task-delete-btn {
-      background: none; border: none; color: var(--grey);
-      font-size: 11px; padding: 0 2px; line-height: 1;
+      background: none; border: none; color: var(--text-muted);
+      font-size: 16px; padding: 0 4px; line-height: 1;
       opacity: 0.5; transition: opacity 0.2s, color 0.2s;
     }
     .task-delete-btn:hover { opacity: 1; color: var(--red); }
 
     .completed-divider {
-      font-size: 11px;
-      color: var(--grey);
-      margin: 12px 0 6px;
-      border-top: 2px solid var(--border);
-      padding-top: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin: 14px 0 8px;
+      border-top: 1px solid var(--border);
+      padding-top: 10px;
     }
 
     /* Add task form */
@@ -450,29 +471,30 @@
       border-bottom: 1px solid var(--border);
     }
     .hist-stat { text-align: center; }
-    .hist-stat-value { font-size: 24px; color: var(--green); }
-    .hist-stat-label { font-size: 11px; color: var(--grey); margin-top: 2px; }
+    .hist-stat-value { font-family: var(--pixel); font-size: 22px; color: var(--green); }
+    .hist-stat-label { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
 
     #memory-list { display: flex; flex-direction: column; gap: 6px; max-height: 60vh; overflow-y: auto; }
     .memory-row {
       display: flex;
-      gap: 8px;
+      gap: 10px;
       align-items: flex-start;
       padding: 10px 12px;
-      background: var(--card);
+      background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 2px;
-      font-size: 12px;
+      border-radius: 6px;
+      font-size: 14px;
     }
-    .memory-icon { font-size: 13px; flex-shrink: 0; width: 20px; text-align: center; }
-    .memory-text { flex: 1; color: var(--white); line-height: 1.4; }
-    .memory-detail { color: var(--green); }
-    .memory-time { font-size: 11px; color: var(--grey); flex-shrink: 0; }
+    .memory-icon { font-size: 12px; font-family: var(--pixel); flex-shrink: 0; width: 28px; text-align: center; color: var(--text-muted); }
+    .memory-text { flex: 1; color: var(--text); line-height: 1.5; }
+    .memory-detail { color: var(--green); font-weight: 500; }
+    .memory-time { font-size: 12px; color: var(--text-muted); flex-shrink: 0; }
 
     /* =====================================================================
        MAINTENANCE TAB
     ===================================================================== */
     #backup-counter {
+      font-family: var(--pixel);
       font-size: 36px;
       text-align: center;
       padding: 20px 0 8px;
@@ -480,7 +502,7 @@
     }
     #backup-counter.overdue  { color: var(--red); animation: tremor 1s ease-in-out infinite; }
     #backup-counter.warning  { color: var(--yellow); }
-    #backup-counter-label   { font-size: 12px; text-align: center; color: var(--grey); margin-bottom: 24px; }
+    #backup-counter-label   { font-size: 14px; text-align: center; color: var(--text-muted); margin-bottom: 24px; }
 
     /* =====================================================================
        CHAT UI
@@ -494,31 +516,32 @@
 
     #chat-input {
       flex: 1;
-      font-size: 11px !important;
-      padding: 8px 10px;
+      font-family: var(--sans);
+      font-size: 14px;
+      padding: 10px 12px;
       background: var(--bg);
-      border: 2px solid var(--border);
-      color: var(--white);
-      font-family: inherit;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
       min-width: 0;
     }
 
     #chat-input:focus { outline: none; border-color: var(--blue); }
-    #chat-input::placeholder { color: var(--grey); }
+    #chat-input::placeholder { color: var(--text-muted); }
 
     #chat-btn {
-      font-size: 10px !important;
-      padding: 6px 10px !important;
+      font-size: 13px !important;
+      padding: 10px 16px !important;
       white-space: nowrap;
       flex-shrink: 0;
     }
 
     #chat-thinking {
-      font-size: 10px;
-      color: var(--grey);
+      font-size: 13px;
+      color: var(--text-muted);
       text-align: center;
-      min-height: 14px;
-      margin-top: 2px;
+      min-height: 18px;
+      margin-top: 4px;
     }
 
     #backup-btn {
@@ -531,47 +554,50 @@
     /* =====================================================================
        SHARED FORM STYLES
     ===================================================================== */
-    .form-row { margin-bottom: 14px; }
-    .form-label { font-size: 11px; color: var(--grey); display: block; margin-bottom: 5px; }
+    .form-row { margin-bottom: 16px; }
+    .form-label { font-size: 13px; font-weight: 500; color: var(--text-muted); display: block; margin-bottom: 6px; }
 
-    /* NES-style replacement: clean flat retro buttons */
+    /* Flat buttons */
     .nes-btn {
       display: inline-block;
-      font-family: "Press Start 2P", monospace;
-      font-size: 13px !important;
-      padding: 12px 18px;
-      color: var(--white);
+      font-family: var(--sans);
+      font-weight: 600;
+      font-size: 14px !important;
+      padding: 10px 18px;
+      color: var(--text);
       background: var(--surface);
-      border: 2px solid var(--border);
+      border: 1px solid var(--border);
+      border-radius: 6px;
       outline: none;
-      transition: border-color 0.15s, opacity 0.15s;
+      transition: border-color 0.15s, background 0.15s;
     }
-    .nes-btn:hover  { border-color: var(--white); }
-    .nes-btn:active { opacity: 0.75; }
-    .nes-btn.is-primary { background: #003f4f; border-color: var(--blue); color: var(--blue); }
-    .nes-btn.is-primary:hover { border-color: #80d8ec; color: #80d8ec; }
-    .nes-btn.is-error { background: #3f0a0a; border-color: var(--red); color: var(--red); }
-    .nes-btn.is-error:hover { border-color: #ff9090; }
-    .nes-btn.is-success { background: #0a3f1a; border-color: var(--green); color: var(--green); }
-    .nes-btn.is-success:hover { border-color: #80ffba; }
+    .nes-btn:hover  { background: #21262d; border-color: #8b949e; }
+    .nes-btn:active { opacity: 0.8; }
+    .nes-btn.is-primary { background: #0d2a4a; border-color: var(--blue); color: var(--blue); }
+    .nes-btn.is-primary:hover { background: #1a3a5c; }
+    .nes-btn.is-error { background: #2a0d0d; border-color: var(--red); color: var(--red); }
+    .nes-btn.is-error:hover { background: #3a1515; }
+    .nes-btn.is-success { background: #0d2a18; border-color: var(--green); color: var(--green); }
+    .nes-btn.is-success:hover { background: #1a3a24; }
 
     /* Clean inputs */
     .nes-input, .nes-select select {
-      font-family: "Press Start 2P", monospace;
-      font-size: 12px !important;
+      font-family: var(--sans);
+      font-size: 15px;
       width: 100%;
-      background: #0d1b2a;
-      color: var(--white);
-      border: 2px solid var(--border);
+      background: #0d1117;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
       padding: 10px 12px;
       outline: none;
     }
     .nes-input:focus, .nes-select select:focus { border-color: var(--blue); }
-    .nes-input::placeholder { color: var(--grey); }
+    .nes-input::placeholder { color: var(--text-muted); }
     .nes-select select { appearance: none; -webkit-appearance: none; }
 
     .form-error {
-      font-size: 11px;
+      font-size: 13px;
       color: var(--red);
       margin: 4px 0 8px;
       min-height: 18px;
@@ -583,8 +609,9 @@
     #error-banner {
       display: none;
       background: var(--red);
-      color: #000;
-      font-size: 12px;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
       padding: 10px 14px;
       text-align: center;
     }
@@ -610,24 +637,24 @@
     <div id="pet-name-level">
       <span id="pet-species">BITMON</span> &nbsp; LV.<span id="pet-level">1</span>
       <button id="rename-toggle" onclick="toggleRename()" title="Rename pet"
-              style="font-size:10px;background:none;border:none;color:var(--grey);padding:0 4px;vertical-align:middle">[R]</button>
-      <span id="pet-stage" style="display:block;font-size:10px;letter-spacing:2px;color:var(--grey)">FRESH</span>
-      <span id="pet-next-evo" style="display:block;font-size:9px;color:var(--grey);opacity:0.7">next: LV.2</span>
-      <span id="down-badge" style="display:none;font-size:11px;color:var(--red);letter-spacing:1px;margin-top:3px">! DOWN</span>
-      <span id="backup-warn-badge" style="display:none;font-size:11px;color:var(--yellow);letter-spacing:1px;margin-top:2px">BACKUP!</span>
-      <div id="rename-form" style="display:none;margin-top:6px">
+              style="font-family:var(--sans);font-size:12px;background:none;border:none;color:var(--text-muted);padding:0 4px;vertical-align:middle">[R]</button>
+      <span id="pet-stage" style="display:block;font-family:var(--sans);font-size:12px;letter-spacing:1px;color:var(--text-muted)">FRESH</span>
+      <span id="pet-next-evo" style="display:block;font-family:var(--sans);font-size:12px;color:var(--text-muted);opacity:0.8">next: LV.2</span>
+      <span id="down-badge" style="display:none;font-family:var(--sans);font-size:13px;font-weight:600;color:var(--red);margin-top:4px">! DOWN</span>
+      <span id="backup-warn-badge" style="display:none;font-family:var(--sans);font-size:13px;font-weight:600;color:var(--yellow);margin-top:2px">BACKUP!</span>
+      <div id="rename-form" style="display:none;margin-top:8px;display:flex;gap:6px;align-items:center">
         <input id="rename-input" type="text" maxlength="30" placeholder="New name..."
-               style="font-size:11px;width:110px;background:var(--bg);color:var(--white);border:2px solid var(--border);padding:4px 6px;font-family:inherit"
+               style="font-family:var(--sans);font-size:14px;width:130px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px"
                onkeydown="if(event.key==='Enter') renamePet(); if(event.key==='Escape') toggleRename()">
         <button onclick="renamePet()"
-                style="font-size:11px;background:var(--blue);color:var(--bg);border:none;padding:4px 8px;font-family:inherit">OK</button>
+                style="font-family:var(--sans);font-size:14px;font-weight:600;background:var(--blue);color:#000;border:none;border-radius:4px;padding:5px 10px">OK</button>
         <button onclick="toggleRename()"
-                style="font-size:11px;background:none;color:var(--grey);border:none;padding:4px 6px;font-family:inherit">X</button>
+                style="font-family:var(--sans);font-size:14px;background:none;color:var(--text-muted);border:none;padding:5px">X</button>
       </div>
     </div>
 
     <div>
-      <div style="font-size:9px;color:var(--grey);margin-bottom:3px">HP</div>
+      <div style="font-size:13px;font-weight:500;color:var(--text-muted);margin-bottom:4px">HP</div>
       <div id="hp-bar"></div>
     </div>
 
@@ -669,7 +696,7 @@
 ===================================================================== -->
 <div class="tab-content" id="panel-infra">
   <div id="server-list">
-    <div style="font-size:10px;color:var(--grey);text-align:center;padding:20px 0">
+    <div style="font-size:14px;color:var(--text-muted);text-align:center;padding:24px 0">
       No servers monitored yet. Add one below.
     </div>
   </div>
@@ -713,7 +740,7 @@
 ===================================================================== -->
 <div class="tab-content" id="panel-tasks">
   <div id="task-list">
-    <div style="font-size:10px;color:var(--grey);text-align:center;padding:20px 0">
+    <div style="font-size:14px;color:var(--text-muted);text-align:center;padding:24px 0">
       No tasks yet. Add your first sysadmin task below.
     </div>
   </div>
@@ -725,15 +752,15 @@
              placeholder="Fix nginx backup" maxlength="500"
              onkeydown="if(event.key==='Enter') addTask()">
     </div>
-    <div class="form-row" style="align-items:center;gap:6px;margin-top:4px">
+    <div class="form-row" style="align-items:center;gap:8px;margin-top:4px">
       <label class="form-label" style="white-space:nowrap">PRIORITY</label>
-      <label style="font-size:12px">
+      <label style="font-size:14px">
         <input type="radio" name="task-priority" value="high"> [H] High
       </label>
-      <label style="font-size:12px">
+      <label style="font-size:14px">
         <input type="radio" name="task-priority" value="normal" checked> Normal
       </label>
-      <label style="font-size:12px">
+      <label style="font-size:14px">
         <input type="radio" name="task-priority" value="low"> [L] Low
       </label>
     </div>
@@ -749,7 +776,7 @@
   <div id="backup-counter">—</div>
   <div id="backup-counter-label">DAYS SINCE LAST BACKUP</div>
 
-  <div style="font-size:10px;color:var(--grey);text-align:center;padding:0 0 16px">
+  <div style="font-size:14px;color:var(--text-muted);text-align:center;padding:0 0 16px">
     Running a backup grants the Digimon<br>
     <span style="color:var(--gold)">+30 EXP</span> &amp;
     <span style="color:var(--green)">+5 HP</span>
@@ -758,21 +785,21 @@
   <button id="backup-btn" class="nes-btn is-success" onclick="runBackup()">
     BACKUP
   </button>
-  <div id="backup-cooldown-timer" style="font-size:9px;color:var(--grey);text-align:center;margin-top:6px;display:none"></div>
+  <div id="backup-cooldown-timer" style="font-family:var(--sans);font-size:13px;color:var(--text-muted);text-align:center;margin-top:8px;display:none"></div>
 
-  <div style="margin-top:24px;border-top:1px solid var(--grey);padding-top:16px;display:none" id="revive-section">
+  <div style="margin-top:24px;border-top:1px solid var(--border);padding-top:16px;display:none" id="revive-section">
     <button id="revive-btn" class="nes-btn is-error" onclick="doRevive()" style="display:none;width:100%">
       REVIVE PET
     </button>
-    <div style="font-size:11px;color:var(--grey);text-align:center;margin-top:6px">
+    <div style="font-family:var(--sans);font-size:13px;color:var(--text-muted);text-align:center;margin-top:8px">
       Reviving resets EXP to 0 and restores 5 HP.
     </div>
   </div>
 
-  <div style="margin-top:24px;border-top:1px solid var(--grey);padding-top:16px">
-    <div style="font-size:11px;color:var(--grey);text-align:center;margin-bottom:8px">DATA EXPORT</div>
+  <div style="margin-top:24px;border-top:1px solid var(--border);padding-top:16px">
+    <div style="font-family:var(--sans);font-size:14px;font-weight:600;color:var(--text-muted);text-align:center;margin-bottom:10px">DATA EXPORT</div>
     <button class="nes-btn" style="width:100%" onclick="exportData()">EXPORT JSON</button>
-    <div style="font-size:11px;color:var(--grey);text-align:center;margin-top:6px">
+    <div style="font-family:var(--sans);font-size:13px;color:var(--text-muted);text-align:center;margin-top:8px">
       Downloads servers, tasks &amp; memories as JSON.
     </div>
   </div>
@@ -801,7 +828,7 @@
     </div>
   </div>
   <div id="memory-list">
-    <div style="font-size:10px;color:var(--grey);text-align:center;padding:20px 0">
+    <div style="font-size:14px;color:var(--text-muted);text-align:center;padding:24px 0">
       No memories yet. Start monitoring to build history.
     </div>
   </div>
@@ -812,8 +839,8 @@
 ===================================================================== -->
 <div id="edit-server-overlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:1000;overflow-y:auto;padding:16px"
      onclick="if(event.target===this) closeEditServer()">
-  <div style="max-width:480px;margin:40px auto;background:var(--card);border:2px solid var(--border);padding:16px">
-    <h3 style="font-size:13px;color:var(--green);margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:8px">EDIT SERVER</h3>
+  <div style="max-width:480px;margin:40px auto;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:20px">
+    <h3 style="font-size:16px;font-weight:700;color:var(--green);margin-bottom:14px;border-bottom:1px solid var(--border);padding-bottom:10px">EDIT SERVER</h3>
     <input type="hidden" id="edit-srv-id">
     <div class="form-row">
       <label class="form-label" for="edit-srv-name">NAME</label>
@@ -1130,7 +1157,7 @@ function renderServers(servers) {
 
   const list = document.getElementById("server-list");
   if (!servers.length) {
-    list.innerHTML = '<div style="font-size:10px;color:var(--grey);text-align:center;padding:20px 0">No servers monitored yet. Add one below.</div>';
+    list.innerHTML = '<div style="font-size:14px;color:var(--text-muted);text-align:center;padding:24px 0">No servers monitored yet. Add one below.</div>';
     return;
   }
 
@@ -1152,30 +1179,30 @@ function renderServers(servers) {
   <div class="server-header">
     <div class="status-dot ${isDown ? "down" : "up"}"></div>
     <div class="server-name">${escHtml(s.name)}</div>
-    ${isMaint ? '<div style="font-size:10px;color:var(--yellow);margin-left:2px" title="Maintenance mode">[M]</div>' : ""}
-    <div style="font-size:11px;color:var(--grey)">${s.type.toUpperCase()}</div>
-    <button class="nes-btn ${isMaint ? "is-warning" : ""}" style="font-size:11px!important;padding:4px 10px;margin-left:4px"
+    ${isMaint ? '<div style="font-family:var(--sans);font-size:13px;color:var(--yellow);margin-left:4px" title="Maintenance mode">[M]</div>' : ""}
+    <div style="font-family:var(--sans);font-size:13px;color:var(--text-muted)">${s.type.toUpperCase()}</div>
+    <button class="nes-btn ${isMaint ? "is-warning" : ""}" style="font-size:13px!important;padding:5px 10px;margin-left:4px"
             title="${isMaint ? "Disable maintenance" : "Enable maintenance"}"
             onclick="toggleMaintenance(${s.id})">MNT</button>
-    <button class="nes-btn" style="font-size:11px!important;padding:4px 10px;margin-left:4px"
+    <button class="nes-btn" style="font-size:13px!important;padding:5px 10px;margin-left:4px"
             title="Edit server" onclick="openEditServer(${s.id})">EDIT</button>
-    <button class="nes-btn" style="font-size:11px!important;padding:4px 8px;margin-left:2px"
+    <button class="nes-btn" style="font-size:13px!important;padding:5px 9px;margin-left:2px"
             title="Move up" onclick="moveServer(${s.id},'up')">UP</button>
-    <button class="nes-btn" style="font-size:11px!important;padding:4px 8px;margin-left:2px"
+    <button class="nes-btn" style="font-size:13px!important;padding:5px 9px;margin-left:2px"
             title="Move down" onclick="moveServer(${s.id},'down')">DN</button>
-    <button class="nes-btn is-error" style="font-size:11px!important;padding:4px 10px;margin-left:4px"
+    <button class="nes-btn is-error" style="font-size:13px!important;padding:5px 10px;margin-left:4px"
             onclick="deleteServer(${s.id})">DEL</button>
   </div>
   <div class="server-addr">${escHtml(s.address)}${s.port ? ":"+s.port : ""}</div>
-  ${isMaint ? '<div style="font-size:11px;color:var(--yellow);margin-bottom:4px">MAINTENANCE — damage paused</div>' : ""}
-  ${isDown && s.last_error ? `<div style="font-size:11px;color:var(--red);margin-bottom:4px">ERR: ${escHtml(s.last_error)}</div>` : ""}
+  ${isMaint ? '<div style="font-family:var(--sans);font-size:13px;color:var(--yellow);margin-bottom:6px">MAINTENANCE — damage paused</div>' : ""}
+  ${isDown && s.last_error ? `<div style="font-family:var(--sans);font-size:13px;color:var(--red);margin-bottom:6px">ERR: ${escHtml(s.last_error)}</div>` : ""}
   <div class="uptime-label">UPTIME ${uptimePct}% &nbsp; (${s.total_checks} checks)</div>
   <div class="uptime-bar-track">
     <div class="uptime-bar-fill ${barClass}" style="width:${uptimePct}%"></div>
   </div>
-  <div style="font-size:11px;color:var(--grey);margin-bottom:3px">LAST 7 DAYS</div>
-  <div class="uptime-grid">${daySquares || '<div style="font-size:11px;color:var(--grey)">No data yet</div>'}</div>
-  ${s.last_checked ? `<div style="font-size:10px;color:var(--grey)">Last checked: ${new Date(s.last_checked).toLocaleTimeString()}</div>` : ""}
+  <div style="font-family:var(--sans);font-size:13px;color:var(--text-muted);margin-bottom:4px">LAST 7 DAYS</div>
+  <div class="uptime-grid">${daySquares || '<div style="font-family:var(--sans);font-size:13px;color:var(--text-muted)">No data yet</div>'}</div>
+  ${s.last_checked ? `<div style="font-family:var(--sans);font-size:12px;color:var(--text-muted)">Last checked: ${new Date(s.last_checked).toLocaleTimeString()}</div>` : ""}
 </div>`;
   }).join("");
 }
@@ -1192,14 +1219,14 @@ function renderTasks(data) {
   const list       = document.getElementById("task-list");
 
   if (!tasks.length && totalDone === 0) {
-    list.innerHTML = '<div style="font-size:10px;color:var(--grey);text-align:center;padding:20px 0">No tasks yet. Add your first sysadmin task below.</div>';
+    list.innerHTML = '<div style="font-family:var(--sans);font-size:14px;color:var(--text-muted);text-align:center;padding:24px 0">No tasks yet. Add your first sysadmin task below.</div>';
     return;
   }
 
   const PRIORITY_BADGE = {
-    high:   '<span style="font-size:11px;color:#e74c3c;margin-right:3px" title="High priority">[H]</span>',
+    high:   '<span style="font-family:var(--sans);font-size:13px;font-weight:700;color:#f85149;margin-right:4px" title="High priority">[H]</span>',
     normal: '',
-    low:    '<span style="font-size:11px;color:var(--grey);margin-right:3px" title="Low priority">[L]</span>',
+    low:    '<span style="font-family:var(--sans);font-size:13px;color:var(--text-muted);margin-right:4px" title="Low priority">[L]</span>',
   };
 
   const pendingHtml = pending.map(t => {
@@ -1214,7 +1241,7 @@ function renderTasks(data) {
 
   let completedHtml = "";
   if (completed.length) {
-    const extra = totalDone > cap ? `<div style="font-size:11px;color:var(--grey);padding:4px 0">...and ${totalDone - completed.length} more completed</div>` : "";
+    const extra = totalDone > cap ? `<div style="font-family:var(--sans);font-size:13px;color:var(--text-muted);padding:4px 0">...and ${totalDone - completed.length} more completed</div>` : "";
     completedHtml = `
 <div class="completed-divider">COMPLETED (${totalDone})</div>
 ${completed.map(t => `
@@ -1224,7 +1251,7 @@ ${completed.map(t => `
 </div>`).join("")}${extra}`;
   }
 
-  list.innerHTML = (pendingHtml || (!completed.length ? '<div style="font-size:10px;color:var(--grey);text-align:center;padding:20px 0">No tasks yet. Add your first sysadmin task below.</div>' : "")) + completedHtml;
+  list.innerHTML = (pendingHtml || (!completed.length ? '<div style="font-family:var(--sans);font-size:14px;color:var(--text-muted);text-align:center;padding:24px 0">No tasks yet. Add your first sysadmin task below.</div>' : "")) + completedHtml;
 }
 
 /* =====================================================================
@@ -1271,7 +1298,7 @@ function renderMemories(data, append = false) {
   if (!data.memories || data.memories.length === 0) {
     if (!append) {
       state.memoriesOffset = 0;
-      list.innerHTML = '<div style="font-size:10px;color:var(--grey);text-align:center;padding:20px 0">No memories yet. Start monitoring to build history.</div>';
+      list.innerHTML = '<div style="font-family:var(--sans);font-size:14px;color:var(--text-muted);text-align:center;padding:24px 0">No memories yet. Start monitoring to build history.</div>';
     }
     return;
   }
@@ -1302,8 +1329,8 @@ function renderMemories(data, append = false) {
   // Add "Load more" button if there are more records
   if (state.memoriesOffset < state.memoriesTotal) {
     list.insertAdjacentHTML("beforeend",
-      `<div id="load-more-btn" style="text-align:center;margin-top:8px">
-        <button class="nes-btn" style="font-size:11px!important;padding:5px 14px"
+      `<div id="load-more-btn" style="text-align:center;margin-top:10px">
+        <button class="nes-btn" style="font-size:14px!important;padding:9px 18px"
                 onclick="loadMoreMemories()">LOAD MORE (${state.memoriesTotal - state.memoriesOffset} left)</button>
       </div>`
     );
