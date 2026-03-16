@@ -309,7 +309,7 @@
       margin-bottom: -3px;
     }
 
-    .tab-content { display: none; padding: 16px; }
+    .tab-content { display: none; padding: 16px; min-width: 0; overflow: hidden; }
 
     #tab-infra:checked ~ #panel-infra,
     #tab-tasks:checked ~ #panel-tasks,
@@ -332,6 +332,8 @@
       border-radius: 6px;
       padding: 12px 14px;
       transition: border-color 0.3s;
+      min-width: 0;
+      overflow: hidden;
     }
     .server-card.down { border-color: var(--red); animation: card-pulse 1.5s ease-in-out infinite; }
 
@@ -345,6 +347,14 @@
       align-items: center;
       gap: 8px;
       margin-bottom: 6px;
+      flex-wrap: wrap;
+    }
+
+    .server-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
     }
 
     .status-dot {
@@ -360,8 +370,8 @@
       50%       { opacity: 0.4; }
     }
 
-    .server-name  { font-size: 15px; font-weight: 600; flex: 1; }
-    .server-addr  { font-size: 13px; color: var(--text-muted); margin-bottom: 8px; }
+    .server-name  { font-size: 15px; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .server-addr  { font-size: 13px; color: var(--text-muted); margin-bottom: 8px; word-break: break-all; overflow-wrap: break-word; }
     .uptime-label { font-size: 13px; color: var(--text-muted); margin-bottom: 4px; }
 
     .uptime-bar-track {
@@ -1179,18 +1189,20 @@ function renderServers(servers) {
   <div class="server-header">
     <div class="status-dot ${isDown ? "down" : "up"}"></div>
     <div class="server-name">${escHtml(s.name)}</div>
-    ${isMaint ? '<div style="font-family:var(--sans);font-size:13px;color:var(--yellow);margin-left:4px" title="Maintenance mode">[M]</div>' : ""}
+    ${isMaint ? '<div style="font-family:var(--sans);font-size:13px;color:var(--yellow)" title="Maintenance mode">[M]</div>' : ""}
     <div style="font-family:var(--sans);font-size:13px;color:var(--text-muted)">${s.type.toUpperCase()}</div>
-    <button class="nes-btn ${isMaint ? "is-warning" : ""}" style="font-size:13px!important;padding:5px 10px;margin-left:4px"
+  </div>
+  <div class="server-actions">
+    <button class="nes-btn ${isMaint ? "is-warning" : ""}" style="font-size:13px!important;padding:5px 10px"
             title="${isMaint ? "Disable maintenance" : "Enable maintenance"}"
             onclick="toggleMaintenance(${s.id})">MNT</button>
-    <button class="nes-btn" style="font-size:13px!important;padding:5px 10px;margin-left:4px"
+    <button class="nes-btn" style="font-size:13px!important;padding:5px 10px"
             title="Edit server" onclick="openEditServer(${s.id})">EDIT</button>
-    <button class="nes-btn" style="font-size:13px!important;padding:5px 9px;margin-left:2px"
+    <button class="nes-btn" style="font-size:13px!important;padding:5px 9px"
             title="Move up" onclick="moveServer(${s.id},'up')">UP</button>
-    <button class="nes-btn" style="font-size:13px!important;padding:5px 9px;margin-left:2px"
+    <button class="nes-btn" style="font-size:13px!important;padding:5px 9px"
             title="Move down" onclick="moveServer(${s.id},'down')">DN</button>
-    <button class="nes-btn is-error" style="font-size:13px!important;padding:5px 10px;margin-left:4px"
+    <button class="nes-btn is-error" style="font-size:13px!important;padding:5px 10px"
             onclick="deleteServer(${s.id})">DEL</button>
   </div>
   <div class="server-addr">${escHtml(s.address)}${s.port ? ":"+s.port : ""}</div>
