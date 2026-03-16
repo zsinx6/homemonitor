@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DigiMon(itor)</title>
-  <link href="https://unpkg.com/nes.css@2.3.0/css/nes.min.css" rel="stylesheet">
   <style>
     /* =====================================================================
        RESET & BASE
@@ -169,7 +168,7 @@
     }
 
     #pet-name-level {
-      font-size: 13px;
+      font-size: 15px;
       color: var(--blue);
     }
 
@@ -192,7 +191,7 @@
     .hp-pip.anim-damage { animation: pip-damage 0.4s ease; }
     .hp-pip.anim-heal   { animation: pip-heal 0.4s ease; }
 
-    #exp-label { font-size: 10px; color: var(--grey); }
+    #exp-label { font-size: 12px; color: var(--grey); }
 
     #exp-track {
       background: var(--hp-empty);
@@ -211,11 +210,11 @@
     #speech-bubble {
       background: var(--surface);
       border: 3px solid var(--white);
-      padding: 8px 10px;
-      font-size: 10px;
+      padding: 10px 12px;
+      font-size: 12px;
       line-height: 1.6;
       color: var(--white);
-      min-height: 44px;
+      min-height: 50px;
       position: relative;
     }
     #speech-bubble::before {
@@ -271,8 +270,8 @@
     .tab-label {
       flex: 1;
       text-align: center;
-      padding: 10px 4px;
-      font-size: 10px;
+      padding: 12px 4px;
+      font-size: 12px;
       color: var(--grey);
       border-right: 2px solid var(--border);
       transition: color 0.2s;
@@ -339,9 +338,9 @@
       50%       { opacity: 0.4; }
     }
 
-    .server-name  { font-size: 11px; flex: 1; }
-    .server-addr  { font-size: 9px; color: var(--grey); margin-bottom: 6px; }
-    .uptime-label { font-size: 9px; color: var(--grey); margin-bottom: 4px; }
+    .server-name  { font-size: 13px; flex: 1; }
+    .server-addr  { font-size: 11px; color: var(--grey); margin-bottom: 6px; }
+    .uptime-label { font-size: 11px; color: var(--grey); margin-bottom: 4px; }
 
     .uptime-bar-track {
       background: var(--hp-empty);
@@ -414,7 +413,7 @@
       flex-shrink: 0;
     }
 
-    .task-text { font-size: 10px; flex: 1; }
+    .task-text { font-size: 12px; flex: 1; }
     .task-text.done { text-decoration: line-through; color: var(--grey); }
     .task-delete-btn {
       background: none; border: none; color: var(--grey);
@@ -424,7 +423,7 @@
     .task-delete-btn:hover { opacity: 1; color: var(--red); }
 
     .completed-divider {
-      font-size: 9px;
+      font-size: 11px;
       color: var(--grey);
       margin: 12px 0 6px;
       border-top: 2px solid var(--border);
@@ -445,37 +444,37 @@
       border-bottom: 1px solid var(--border);
     }
     .hist-stat { text-align: center; }
-    .hist-stat-value { font-size: 20px; color: var(--green); }
-    .hist-stat-label { font-size: 9px; color: var(--grey); margin-top: 2px; }
+    .hist-stat-value { font-size: 24px; color: var(--green); }
+    .hist-stat-label { font-size: 11px; color: var(--grey); margin-top: 2px; }
 
     #memory-list { display: flex; flex-direction: column; gap: 6px; max-height: 60vh; overflow-y: auto; }
     .memory-row {
       display: flex;
       gap: 8px;
       align-items: flex-start;
-      padding: 8px 10px;
+      padding: 10px 12px;
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 2px;
-      font-size: 10px;
+      font-size: 12px;
     }
-    .memory-icon { font-size: 12px; flex-shrink: 0; width: 18px; text-align: center; }
+    .memory-icon { font-size: 13px; flex-shrink: 0; width: 20px; text-align: center; }
     .memory-text { flex: 1; color: var(--white); line-height: 1.4; }
     .memory-detail { color: var(--green); }
-    .memory-time { font-size: 9px; color: var(--grey); flex-shrink: 0; }
+    .memory-time { font-size: 11px; color: var(--grey); flex-shrink: 0; }
 
     /* =====================================================================
        MAINTENANCE TAB
     ===================================================================== */
     #backup-counter {
-      font-size: 30px;
+      font-size: 36px;
       text-align: center;
       padding: 20px 0 8px;
       color: var(--green);
     }
     #backup-counter.overdue  { color: var(--red); animation: tremor 1s ease-in-out infinite; }
     #backup-counter.warning  { color: var(--yellow); }
-    #backup-counter-label   { font-size: 10px; text-align: center; color: var(--grey); margin-bottom: 24px; }
+    #backup-counter-label   { font-size: 12px; text-align: center; color: var(--grey); margin-bottom: 24px; }
 
     /* =====================================================================
        CHAT UI
@@ -489,8 +488,8 @@
 
     #chat-input {
       flex: 1;
-      font-size: 9px !important;
-      padding: 6px 8px;
+      font-size: 11px !important;
+      padding: 8px 10px;
       background: var(--bg);
       border: 2px solid var(--border);
       color: var(--white);
@@ -509,10 +508,10 @@
     }
 
     #chat-thinking {
-      font-size: 8px;
+      font-size: 10px;
       color: var(--grey);
       text-align: center;
-      min-height: 12px;
+      min-height: 14px;
       margin-top: 2px;
     }
 
@@ -526,16 +525,50 @@
     /* =====================================================================
        SHARED FORM STYLES
     ===================================================================== */
-    .form-row { margin-bottom: 12px; }
-    .form-label { font-size: 9px; color: var(--grey); display: block; margin-bottom: 4px; }
-    .nes-input, .nes-select select { font-size: 10px !important; width: 100%; }
-    .nes-btn { font-size: 10px !important; }
+    .form-row { margin-bottom: 14px; }
+    .form-label { font-size: 11px; color: var(--grey); display: block; margin-bottom: 5px; }
+
+    /* NES-style replacement: clean flat retro buttons */
+    .nes-btn {
+      display: inline-block;
+      font-family: "Press Start 2P", monospace;
+      font-size: 13px !important;
+      padding: 12px 18px;
+      color: var(--white);
+      background: var(--surface);
+      border: 2px solid var(--border);
+      outline: none;
+      transition: border-color 0.15s, opacity 0.15s;
+    }
+    .nes-btn:hover  { border-color: var(--white); }
+    .nes-btn:active { opacity: 0.75; }
+    .nes-btn.is-primary { background: #003f4f; border-color: var(--blue); color: var(--blue); }
+    .nes-btn.is-primary:hover { border-color: #80d8ec; color: #80d8ec; }
+    .nes-btn.is-error { background: #3f0a0a; border-color: var(--red); color: var(--red); }
+    .nes-btn.is-error:hover { border-color: #ff9090; }
+    .nes-btn.is-success { background: #0a3f1a; border-color: var(--green); color: var(--green); }
+    .nes-btn.is-success:hover { border-color: #80ffba; }
+
+    /* Clean inputs */
+    .nes-input, .nes-select select {
+      font-family: "Press Start 2P", monospace;
+      font-size: 12px !important;
+      width: 100%;
+      background: #0d1b2a;
+      color: var(--white);
+      border: 2px solid var(--border);
+      padding: 10px 12px;
+      outline: none;
+    }
+    .nes-input:focus, .nes-select select:focus { border-color: var(--blue); }
+    .nes-input::placeholder { color: var(--grey); }
+    .nes-select select { appearance: none; -webkit-appearance: none; }
 
     .form-error {
-      font-size: 9px;
+      font-size: 11px;
       color: var(--red);
       margin: 4px 0 8px;
-      min-height: 16px;
+      min-height: 18px;
     }
 
     /* =====================================================================
@@ -545,8 +578,8 @@
       display: none;
       background: var(--red);
       color: #000;
-      font-size: 10px;
-      padding: 8px 12px;
+      font-size: 12px;
+      padding: 10px 14px;
       text-align: center;
     }
     #error-banner.visible { display: block; }
@@ -557,7 +590,7 @@
 <!-- =====================================================================
      STICKY HEADER
 ===================================================================== -->
-<div id="error-banner">⚠ Could not reach the server. Retrying...</div>
+<div id="error-banner">! Could not reach the server. Retrying...</div>
 
 <header id="pet-header">
   <div id="face-area">
@@ -571,19 +604,19 @@
     <div id="pet-name-level">
       <span id="pet-species">BITMON</span> &nbsp; LV.<span id="pet-level">1</span>
       <button id="rename-toggle" onclick="toggleRename()" title="Rename pet"
-              style="font-size:9px;background:none;border:none;color:var(--grey);padding:0 4px;vertical-align:middle">✎</button>
-      <span id="pet-stage" style="display:block;font-size:9px;letter-spacing:2px;color:var(--grey)">FRESH</span>
-      <span id="pet-next-evo" style="display:block;font-size:8px;color:var(--grey);opacity:0.7">→ LV.2</span>
-      <span id="down-badge" style="display:none;font-size:9px;color:var(--red);letter-spacing:1px;margin-top:3px">⚠ 1 DOWN</span>
-      <span id="backup-warn-badge" style="display:none;font-size:9px;color:var(--yellow);letter-spacing:1px;margin-top:2px">💾 BACKUP!</span>
+              style="font-size:10px;background:none;border:none;color:var(--grey);padding:0 4px;vertical-align:middle">[R]</button>
+      <span id="pet-stage" style="display:block;font-size:10px;letter-spacing:2px;color:var(--grey)">FRESH</span>
+      <span id="pet-next-evo" style="display:block;font-size:9px;color:var(--grey);opacity:0.7">next: LV.2</span>
+      <span id="down-badge" style="display:none;font-size:11px;color:var(--red);letter-spacing:1px;margin-top:3px">! DOWN</span>
+      <span id="backup-warn-badge" style="display:none;font-size:11px;color:var(--yellow);letter-spacing:1px;margin-top:2px">BACKUP!</span>
       <div id="rename-form" style="display:none;margin-top:6px">
         <input id="rename-input" type="text" maxlength="30" placeholder="New name..."
-               style="font-size:9px;width:100px;background:var(--bg);color:var(--white);border:2px solid var(--border);padding:3px 5px;font-family:inherit"
+               style="font-size:11px;width:110px;background:var(--bg);color:var(--white);border:2px solid var(--border);padding:4px 6px;font-family:inherit"
                onkeydown="if(event.key==='Enter') renamePet(); if(event.key==='Escape') toggleRename()">
         <button onclick="renamePet()"
-                style="font-size:9px;background:var(--blue);color:var(--bg);border:none;padding:3px 6px;font-family:inherit">OK</button>
+                style="font-size:11px;background:var(--blue);color:var(--bg);border:none;padding:4px 8px;font-family:inherit">OK</button>
         <button onclick="toggleRename()"
-                style="font-size:9px;background:none;color:var(--grey);border:none;padding:3px 5px;font-family:inherit">✕</button>
+                style="font-size:11px;background:none;color:var(--grey);border:none;padding:4px 6px;font-family:inherit">X</button>
       </div>
     </div>
 
@@ -604,7 +637,7 @@
     <div id="chat-row">
       <input id="chat-input" type="text" placeholder="Ask your Digimon..." maxlength="200"
              onkeydown="if(event.key==='Enter') sendChat()">
-      <button id="chat-btn" class="nes-btn is-primary" onclick="sendChat()">💬</button>
+      <button id="chat-btn" class="nes-btn is-primary" onclick="sendChat()">ASK</button>
     </div>
     <div id="chat-thinking"></div>
   </div>
@@ -619,10 +652,10 @@
 <input class="tab-inputs" type="radio" name="tab" id="tab-history">
 
 <nav class="tab-nav">
-  <label class="tab-label" for="tab-infra">⚡ INFRA</label>
-  <label class="tab-label" for="tab-tasks">✓ TASKS</label>
-  <label class="tab-label" for="tab-maint">💾 MAINT</label>
-  <label class="tab-label" for="tab-history">📜 HIST</label>
+  <label class="tab-label" for="tab-infra">INFRA</label>
+  <label class="tab-label" for="tab-tasks">TASKS</label>
+  <label class="tab-label" for="tab-maint">MAINT</label>
+  <label class="tab-label" for="tab-history">HIST</label>
 </nav>
 
 <!-- =====================================================================
@@ -636,7 +669,7 @@
   </div>
 
   <div id="add-server-form">
-    <h3>➕ ADD SERVER</h3>
+    <h3>ADD SERVER</h3>
     <div class="form-row">
       <label class="form-label" for="srv-name">NAME</label>
       <input id="srv-name" type="text" class="nes-input" placeholder="nginx" maxlength="100">
@@ -688,14 +721,14 @@
     </div>
     <div class="form-row" style="align-items:center;gap:6px;margin-top:4px">
       <label class="form-label" style="white-space:nowrap">PRIORITY</label>
-      <label style="font-size:10px">
-        <input type="radio" name="task-priority" value="high"> 🔴 High
+      <label style="font-size:12px">
+        <input type="radio" name="task-priority" value="high"> [H] High
       </label>
-      <label style="font-size:10px">
+      <label style="font-size:12px">
         <input type="radio" name="task-priority" value="normal" checked> Normal
       </label>
-      <label style="font-size:10px">
-        <input type="radio" name="task-priority" value="low"> 🔵 Low
+      <label style="font-size:12px">
+        <input type="radio" name="task-priority" value="low"> [L] Low
       </label>
     </div>
     <div id="task-error" class="form-error" role="alert" aria-live="polite"></div>
@@ -717,23 +750,23 @@
   </div>
 
   <button id="backup-btn" class="nes-btn is-success" onclick="runBackup()">
-    💾 FEED BACKUP
+    BACKUP
   </button>
   <div id="backup-cooldown-timer" style="font-size:9px;color:var(--grey);text-align:center;margin-top:6px;display:none"></div>
 
   <div style="margin-top:24px;border-top:1px solid var(--grey);padding-top:16px;display:none" id="revive-section">
     <button id="revive-btn" class="nes-btn is-error" onclick="doRevive()" style="display:none;width:100%">
-      💀 REVIVE PET
+      REVIVE PET
     </button>
-    <div style="font-size:9px;color:var(--grey);text-align:center;margin-top:6px">
+    <div style="font-size:11px;color:var(--grey);text-align:center;margin-top:6px">
       Reviving resets EXP to 0 and restores 5 HP.
     </div>
   </div>
 
   <div style="margin-top:24px;border-top:1px solid var(--grey);padding-top:16px">
-    <div style="font-size:9px;color:var(--grey);text-align:center;margin-bottom:8px">DATA EXPORT</div>
-    <button class="nes-btn" style="width:100%" onclick="exportData()">📦 EXPORT BACKUP JSON</button>
-    <div style="font-size:9px;color:var(--grey);text-align:center;margin-top:6px">
+    <div style="font-size:11px;color:var(--grey);text-align:center;margin-bottom:8px">DATA EXPORT</div>
+    <button class="nes-btn" style="width:100%" onclick="exportData()">EXPORT JSON</button>
+    <div style="font-size:11px;color:var(--grey);text-align:center;margin-top:6px">
       Downloads servers, tasks &amp; memories as JSON.
     </div>
   </div>
@@ -774,7 +807,7 @@
 <div id="edit-server-overlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:1000;overflow-y:auto;padding:16px"
      onclick="if(event.target===this) closeEditServer()">
   <div style="max-width:480px;margin:40px auto;background:var(--card);border:2px solid var(--border);padding:16px">
-    <h3 style="font-size:11px;color:var(--green);margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:8px">✎ EDIT SERVER</h3>
+    <h3 style="font-size:13px;color:var(--green);margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:8px">EDIT SERVER</h3>
     <input type="hidden" id="edit-srv-id">
     <div class="form-row">
       <label class="form-label" for="edit-srv-name">NAME</label>
@@ -972,10 +1005,10 @@ function renderPet(pet, lastEvent) {
   document.getElementById("pet-stage").textContent = stage.toUpperCase();
   const nextEvoEl = document.getElementById("pet-next-evo");
   if (pet.evolution_next_level != null) {
-    nextEvoEl.textContent = "→ LV." + pet.evolution_next_level;
+    nextEvoEl.textContent = "next: LV." + pet.evolution_next_level;
     nextEvoEl.style.display = "block";
   } else {
-    nextEvoEl.textContent = "✦ PERFECT ✦";
+    nextEvoEl.textContent = "PERFECT";
     nextEvoEl.style.display = "block";
   }
 
@@ -1022,7 +1055,7 @@ function renderPet(pet, lastEvent) {
   else if (lastEvent === "digivolution") {
     triggerAnim(face, "anim-digivol");
     spawnFloat(face.getBoundingClientRect().left + 20, face.getBoundingClientRect().top - 10,
-               "✦ DIGIVOLUTION! ✦", "floating-exp");
+               "DIGIVOLUTION!", "floating-exp");
   }
   else if (lastEvent === "recovery") triggerAnim(face, "anim-recovery");
   else if (lastEvent === "backup" || lastEvent === "task_done") triggerAnim(face, "anim-backup");
@@ -1047,14 +1080,14 @@ function renderPet(pet, lastEvent) {
     counter.textContent = "NEVER";
     counter.className = "overdue";
     lbl.textContent = "LAST BACKUP";
-    if (warnBadge) { warnBadge.textContent = "💾 NEVER BACKED UP"; warnBadge.style.display = "block"; }
+    if (warnBadge) { warnBadge.textContent = "NEVER BACKED UP"; warnBadge.style.display = "block"; }
   } else {
     counter.textContent = days;
     counter.className = days >= 30 ? "overdue" : (days >= 20 ? "warning" : "");
     lbl.textContent = "DAYS SINCE LAST BACKUP";
     if (warnBadge) {
-      if (days >= 30) { warnBadge.textContent = "💾 BACKUP OVERDUE"; warnBadge.style.display = "block"; }
-      else if (days >= 20) { warnBadge.textContent = "💾 BACKUP SOON"; warnBadge.style.display = "block"; }
+      if (days >= 30) { warnBadge.textContent = "BACKUP OVERDUE"; warnBadge.style.display = "block"; }
+      else if (days >= 20) { warnBadge.textContent = "BACKUP SOON"; warnBadge.style.display = "block"; }
       else { warnBadge.style.display = "none"; }
     }
   }
@@ -1083,7 +1116,7 @@ function renderServers(servers) {
   const downCount = servers.filter(s => s.status === "DOWN").length;
   const badge = document.getElementById("down-badge");
   if (downCount > 0) {
-    badge.textContent = `⚠ ${downCount} DOWN`;
+    badge.textContent = `${downCount} DOWN`;
     badge.style.display = "block";
   } else {
     badge.style.display = "none";
@@ -1113,30 +1146,30 @@ function renderServers(servers) {
   <div class="server-header">
     <div class="status-dot ${isDown ? "down" : "up"}"></div>
     <div class="server-name">${escHtml(s.name)}</div>
-    ${isMaint ? '<div style="font-size:8px;color:var(--yellow);margin-left:2px" title="Maintenance mode — damage paused">🔧</div>' : ""}
-    <div style="font-size:9px;color:var(--grey)">${s.type.toUpperCase()}</div>
-    <button class="nes-btn ${isMaint ? "is-warning" : ""}" style="font-size:8px!important;padding:3px 7px;margin-left:4px"
+    ${isMaint ? '<div style="font-size:10px;color:var(--yellow);margin-left:2px" title="Maintenance mode">[M]</div>' : ""}
+    <div style="font-size:11px;color:var(--grey)">${s.type.toUpperCase()}</div>
+    <button class="nes-btn ${isMaint ? "is-warning" : ""}" style="font-size:11px!important;padding:4px 10px;margin-left:4px"
             title="${isMaint ? "Disable maintenance" : "Enable maintenance"}"
-            onclick="toggleMaintenance(${s.id})">🔧</button>
-    <button class="nes-btn" style="font-size:8px!important;padding:3px 7px;margin-left:4px"
-            title="Edit server" onclick="openEditServer(${s.id})">✎</button>
-    <button class="nes-btn" style="font-size:8px!important;padding:3px 6px;margin-left:2px"
-            title="Move up" onclick="moveServer(${s.id},'up')">▲</button>
-    <button class="nes-btn" style="font-size:8px!important;padding:3px 6px;margin-left:2px"
-            title="Move down" onclick="moveServer(${s.id},'down')">▼</button>
-    <button class="nes-btn is-error" style="font-size:8px!important;padding:3px 7px;margin-left:4px"
-            onclick="deleteServer(${s.id})">✕</button>
+            onclick="toggleMaintenance(${s.id})">MNT</button>
+    <button class="nes-btn" style="font-size:11px!important;padding:4px 10px;margin-left:4px"
+            title="Edit server" onclick="openEditServer(${s.id})">EDIT</button>
+    <button class="nes-btn" style="font-size:11px!important;padding:4px 8px;margin-left:2px"
+            title="Move up" onclick="moveServer(${s.id},'up')">UP</button>
+    <button class="nes-btn" style="font-size:11px!important;padding:4px 8px;margin-left:2px"
+            title="Move down" onclick="moveServer(${s.id},'down')">DN</button>
+    <button class="nes-btn is-error" style="font-size:11px!important;padding:4px 10px;margin-left:4px"
+            onclick="deleteServer(${s.id})">DEL</button>
   </div>
   <div class="server-addr">${escHtml(s.address)}${s.port ? ":"+s.port : ""}</div>
-  ${isMaint ? '<div style="font-size:9px;color:var(--yellow);margin-bottom:4px">🔧 MAINTENANCE — damage paused</div>' : ""}
-  ${isDown && s.last_error ? `<div style="font-size:9px;color:var(--red);margin-bottom:4px">⚠ ${escHtml(s.last_error)}</div>` : ""}
+  ${isMaint ? '<div style="font-size:11px;color:var(--yellow);margin-bottom:4px">MAINTENANCE — damage paused</div>' : ""}
+  ${isDown && s.last_error ? `<div style="font-size:11px;color:var(--red);margin-bottom:4px">ERR: ${escHtml(s.last_error)}</div>` : ""}
   <div class="uptime-label">UPTIME ${uptimePct}% &nbsp; (${s.total_checks} checks)</div>
   <div class="uptime-bar-track">
     <div class="uptime-bar-fill ${barClass}" style="width:${uptimePct}%"></div>
   </div>
-  <div style="font-size:9px;color:var(--grey);margin-bottom:3px">LAST 7 DAYS</div>
-  <div class="uptime-grid">${daySquares || '<div style="font-size:9px;color:var(--grey)">No data yet</div>'}</div>
-  ${s.last_checked ? `<div style="font-size:8px;color:var(--grey)">Last checked: ${new Date(s.last_checked).toLocaleTimeString()}</div>` : ""}
+  <div style="font-size:11px;color:var(--grey);margin-bottom:3px">LAST 7 DAYS</div>
+  <div class="uptime-grid">${daySquares || '<div style="font-size:11px;color:var(--grey)">No data yet</div>'}</div>
+  ${s.last_checked ? `<div style="font-size:10px;color:var(--grey)">Last checked: ${new Date(s.last_checked).toLocaleTimeString()}</div>` : ""}
 </div>`;
   }).join("");
 }
@@ -1158,9 +1191,9 @@ function renderTasks(data) {
   }
 
   const PRIORITY_BADGE = {
-    high:   '<span style="font-size:9px;color:#e74c3c;margin-right:3px" title="High priority">🔴</span>',
+    high:   '<span style="font-size:11px;color:#e74c3c;margin-right:3px" title="High priority">[H]</span>',
     normal: '',
-    low:    '<span style="font-size:9px;color:var(--grey);margin-right:3px" title="Low priority">🔵</span>',
+    low:    '<span style="font-size:11px;color:var(--grey);margin-right:3px" title="Low priority">[L]</span>',
   };
 
   const pendingHtml = pending.map(t => {
@@ -1169,13 +1202,13 @@ function renderTasks(data) {
 <div class="task-item" id="task-${t.id}">
   <input type="checkbox" class="task-checkbox" onchange="completeTask(${t.id}, this)">
   ${badge}<span class="task-text">${escHtml(t.task)}</span>
-  <button class="task-delete-btn" onclick="deleteTask(${t.id})" title="Delete task">✕</button>
+  <button class="task-delete-btn" onclick="deleteTask(${t.id})" title="Delete task">X</button>
 </div>`;
   }).join("");
 
   let completedHtml = "";
   if (completed.length) {
-    const extra = totalDone > cap ? `<div style="font-size:9px;color:var(--grey);padding:4px 0">… and ${totalDone - completed.length} more completed</div>` : "";
+    const extra = totalDone > cap ? `<div style="font-size:11px;color:var(--grey);padding:4px 0">...and ${totalDone - completed.length} more completed</div>` : "";
     completedHtml = `
 <div class="completed-divider">COMPLETED (${totalDone})</div>
 ${completed.map(t => `
@@ -1195,17 +1228,17 @@ ${completed.map(t => `
    RENDER MEMORIES (History tab)
 ===================================================================== */
 const MEMORY_META = {
-  server_down:      { icon: "🔴", label: "went DOWN" },
-  server_recovery:  { icon: "🟢", label: "came back UP" },
-  task_complete:    { icon: "✅", label: "Task done" },
-  backup:           { icon: "💾", label: "Backup ran" },
-  level_up:         { icon: "⬆️", label: "Level up →" },
-  digivolution:     { icon: "✨", label: "Digivolved →" },
-  death:            { icon: "💀", label: "Fell in battle" },
-  revival:          { icon: "💫", label: "Revived" },
-  rename:           { icon: "✎", label: "Renamed →" },
-  maintenance_on:   { icon: "🔧", label: "Maintenance ON →" },
-  maintenance_off:  { icon: "🔧", label: "Maintenance OFF →" },
+  server_down:      { icon: "DN", label: "went DOWN" },
+  server_recovery:  { icon: "UP", label: "came back UP" },
+  task_complete:    { icon: "OK", label: "Task done" },
+  backup:           { icon: "BK", label: "Backup ran" },
+  level_up:         { icon: "LV", label: "Level up" },
+  digivolution:     { icon: "EV", label: "Digivolved" },
+  death:            { icon: "XX", label: "Fell in battle" },
+  revival:          { icon: "RV", label: "Revived" },
+  rename:           { icon: "RN", label: "Renamed" },
+  maintenance_on:   { icon: "MN", label: "Maintenance ON" },
+  maintenance_off:  { icon: "MF", label: "Maintenance OFF" },
 };
 
 function relTime(isoStr) {
@@ -1238,7 +1271,7 @@ function renderMemories(data, append = false) {
   }
 
   const rows = data.memories.map(m => {
-    const meta   = MEMORY_META[m.event_type] || { icon: "❓", label: m.event_type };
+    const meta   = MEMORY_META[m.event_type] || { icon: "??", label: m.event_type };
     const detail = m.detail ? `<span class="memory-detail"> ${escHtml(m.detail)}</span>` : "";
     return `<div class="memory-row">
       <span class="memory-icon">${meta.icon}</span>
@@ -1264,8 +1297,8 @@ function renderMemories(data, append = false) {
   if (state.memoriesOffset < state.memoriesTotal) {
     list.insertAdjacentHTML("beforeend",
       `<div id="load-more-btn" style="text-align:center;margin-top:8px">
-        <button class="nes-btn" style="font-size:9px!important;padding:5px 14px"
-                onclick="loadMoreMemories()">⬇ LOAD MORE (${state.memoriesTotal - state.memoriesOffset} left)</button>
+        <button class="nes-btn" style="font-size:11px!important;padding:5px 14px"
+                onclick="loadMoreMemories()">LOAD MORE (${state.memoriesTotal - state.memoriesOffset} left)</button>
       </div>`
     );
   }
@@ -1314,11 +1347,11 @@ async function petInteract(event) {
     const res = await api("POST", "/api/pet/interact");
     setSpeech(res.phrase);
     if (res.on_cooldown) {
-      const icon = (state.pet && state.pet.is_dead) ? "💀" : "⏰";
+      const icon = (state.pet && state.pet.is_dead) ? "[X]" : "[Z]";
       spawnFloat(event.clientX - 8, event.clientY - 20, icon, "floating-heart");
       return;
     }
-    spawnFloat(event.clientX - 8, event.clientY - 20, "❤️", "floating-heart");
+    spawnFloat(event.clientX - 8, event.clientY - 20, "+", "floating-heart");
     // Optimistic EXP update
     if (state.pet) {
       state.pet.exp = res.exp;
@@ -1506,8 +1539,8 @@ async function runBackup() {
     setSpeech(res.phrase);
     if (res.on_cooldown) {
       onCooldown = true;
-      btn.textContent = "⏳ ON COOLDOWN";
-      setTimeout(() => { btn.textContent = "💾 FEED BACKUP"; btn.disabled = false; }, 3000);
+      btn.textContent = "ON COOLDOWN";
+      setTimeout(() => { btn.textContent = "BACKUP"; btn.disabled = false; }, 3000);
     } else {
       triggerAnim(document.getElementById("digimon-face"), "anim-backup");
       await poll();
@@ -1516,7 +1549,7 @@ async function runBackup() {
   finally {
     if (!onCooldown) {
       btn.disabled = false;
-      btn.textContent = "💾 FEED BACKUP";
+      btn.textContent = "BACKUP";
     }
   }
 }
@@ -1531,7 +1564,7 @@ async function doRevive() {
     await poll();
   } catch (_) {}
   btn.disabled = false;
-  btn.textContent = "💀 REVIVE PET";
+  btn.textContent = "REVIVE PET";
 }
 
 async function exportData() {
