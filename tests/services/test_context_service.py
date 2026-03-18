@@ -58,7 +58,7 @@ class TestContextService:
         snapshot = ContextSnapshot(
             pet_name="Bitmon", pet_level=1, pet_species="Bitmon", pet_stage="fresh",
             pet_hp=10, pet_hp_max=10, pet_exp=0, pet_max_exp=100,
-            pet_status="happy", pet_is_dead=False,
+            pet_status="happy", pet_is_dead=False, pet_mood="Energetic",
             servers_total=2, servers_up=1, servers_down=1, servers_maintenance=0,
             down_server_names=["nginx"], overall_uptime_pct=72.3,
             tasks_pending=3, tasks_completed_total=5,

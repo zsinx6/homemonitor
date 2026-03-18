@@ -24,20 +24,24 @@ class MemoryType:
     RENAME = "rename"
     MAINTENANCE_ON = "maintenance_on"
     MAINTENANCE_OFF = "maintenance_off"
+    DUST_CLEANED = "dust_cleaned"
+    FOCUS_COMPLETE = "focus_complete"
 
     # Human-readable labels and icons for the UI
     LABELS: dict[str, tuple[str, str]] = {
-        SERVER_DOWN:      ("🔴", "went DOWN"),
-        SERVER_RECOVERY:  ("🟢", "came back UP"),
-        TASK_COMPLETE:    ("✅", "Task completed"),
-        BACKUP:           ("💾", "Backup ran"),
-        LEVEL_UP:         ("⬆️", "Level up"),
-        DIGIVOLUTION:     ("✨", "Digivolved"),
-        DEATH:            ("💀", "Fell in battle"),
-        REVIVAL:          ("💫", "Was revived"),
-        RENAME:           ("✎", "Renamed to"),
-        MAINTENANCE_ON:   ("🔧", "Maintenance ON"),
-        MAINTENANCE_OFF:  ("🔧", "Maintenance OFF"),
+        SERVER_DOWN:      ("DN", "went DOWN"),
+        SERVER_RECOVERY:  ("UP", "came back UP"),
+        TASK_COMPLETE:    ("OK", "Task completed"),
+        BACKUP:           ("BK", "Backup ran"),
+        LEVEL_UP:         ("LV", "Level up"),
+        DIGIVOLUTION:     ("EV", "Digivolved"),
+        DEATH:            ("XX", "Fell in battle"),
+        REVIVAL:          ("RV", "Was revived"),
+        RENAME:           ("RN", "Renamed to"),
+        MAINTENANCE_ON:   ("MN", "Maintenance ON"),
+        MAINTENANCE_OFF:  ("MN", "Maintenance OFF"),
+        DUST_CLEANED:     ("CL", "Cleaned up dust"),
+        FOCUS_COMPLETE:   ("FO", "Completed focus session"),
     }
 
 

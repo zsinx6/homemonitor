@@ -30,6 +30,7 @@ class ContextSnapshot:
     pet_max_exp: int
     pet_status: str
     pet_is_dead: bool
+    pet_mood: str  # V3: daily mood state
 
     # ── Infrastructure ───────────────────────────────────────────────────────
     servers_total: int
@@ -71,6 +72,7 @@ class ContextSnapshot:
                 "max_exp": self.pet_max_exp,
                 "status": self.pet_status,
                 "is_dead": self.pet_is_dead,
+                "mood": self.pet_mood,
             },
             "infrastructure": {
                 "servers_total": self.servers_total,
@@ -95,6 +97,7 @@ class ContextSnapshot:
         parts: list[str] = [
             f"Digimon: {self.pet_species} (Lv.{self.pet_level} {self.pet_stage}), "
             f"HP {self.pet_hp}/{self.pet_hp_max}, EXP {self.pet_exp}/{self.pet_max_exp}, "
+            f"Mood: {self.pet_mood}, "
             f"Status: {self.pet_status}"
             + (" [DEAD — awaiting revival]" if self.pet_is_dead else "") + ".",
         ]
@@ -205,6 +208,7 @@ async def build_snapshot(db: aiosqlite.Connection) -> ContextSnapshot:
         pet_max_exp=pet.max_exp,
         pet_status=status,
         pet_is_dead=pet.is_dead,
+        pet_mood=pet.current_mood,
         servers_total=len(servers),
         servers_up=servers_up,
         servers_down=servers_down,

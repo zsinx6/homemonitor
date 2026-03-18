@@ -111,6 +111,8 @@ async def _build_pet_response(db, phrase_selector, pet_service: PetService) -> P
         last_updated=pet.last_updated,
         backup_cooldown_remaining_seconds=backup_remaining,
         days_since_backup=snapshot.days_since_backup,
+        dust_count=pet.dust_count,
+        current_mood=pet.current_mood,
     )
 
 
@@ -186,3 +188,51 @@ async def rename_pet(
     """Set a custom display name for the pet (resets on next evolution)."""
     await pet_service.rename(db, body.name)
     return await _build_pet_response(db, phrase_selector, pet_service)
+
+
+@router.post("/pet/clean", response_model=dict)
+async def clean(
+    db: aiosqlite.Connection = Depends(get_db),
+    pet_service: PetService = Depends(get_pet_service),
+    phrase_selector=Depends(get_phrase_selector),
+):
+    """Clean the pet's dust. Gains EXP."""
+    pet, success = await pet_service.clean(db)
+    snapshot = await context_service.build_snapshot(db)
+    ctx = {"__context__": snapshot, "species": snapshot.pet_species}
+    if pet.is_dead:
+        phrase = await phrase_selector.select(PhraseContext.DEATH, ctx)
+    elif not success:
+        phrase = "No dust to clean."
+    else:
+        phrase = await phrase_selector.select(PhraseContext.INTERACT, ctx)
+    return {
+        "exp": pet.exp,
+        "phrase": phrase,
+        "success": success,
+        "dust_count": pet.dust_count,
+    }
+
+
+@router.post("/pet/focus_reward", response_model=dict)
+async def focus_reward(
+    db: aiosqlite.Connection = Depends(get_db),
+    pet_service: PetService = Depends(get_pet_service),
+    phrase_selector=Depends(get_phrase_selector),
+):
+    """Complete a focus session. Gains EXP and HP."""
+    pet, on_cooldown = await pet_service.focus_reward(db)
+    snapshot = await context_service.build_snapshot(db)
+    ctx = {"__context__": snapshot, "species": snapshot.pet_species}
+    if pet.is_dead:
+        phrase = await phrase_selector.select(PhraseContext.DEATH, ctx)
+    elif on_cooldown:
+        phrase = "You need a break first! Focus cooldown active."
+    else:
+        phrase = await phrase_selector.select(PhraseContext.BACKUP, ctx)  # reuse backup phrase
+    return {
+        "exp": pet.exp,
+        "hp": pet.hp,
+        "phrase": phrase,
+        "on_cooldown": on_cooldown,
+    }

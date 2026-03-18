@@ -31,6 +31,8 @@ class PetResponse(BaseModel):
     last_updated: datetime
     backup_cooldown_remaining_seconds: int = 0
     days_since_backup: Optional[int] = None
+    dust_count: int = 0
+    current_mood: str = "Energetic"
 
 
 class PetInteractResponse(BaseModel):
@@ -45,6 +47,18 @@ class PetBackupResponse(BaseModel):
     phrase: str
     on_cooldown: bool = False
     last_backup_date: Optional[datetime]
+
+
+class PetCleanResponse(BaseModel):
+    exp: int
+    phrase: str
+
+
+class PetFocusResponse(BaseModel):
+    exp: int
+    hp: int
+    phrase: str
+    on_cooldown: bool = False
 
 
 # ---------------------------------------------------------------------------

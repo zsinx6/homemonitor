@@ -194,3 +194,21 @@ async def init_db(db: aiosqlite.Connection) -> None:
             await db.execute("PRAGMA foreign_keys = ON")
         except Exception:
             pass
+    # Migration: add V3 dust/mood columns to pet_state
+    try:
+        await db.execute(
+            "ALTER TABLE pet_state ADD COLUMN dust_count INTEGER NOT NULL DEFAULT 0"
+        )
+        await db.execute(
+            "ALTER TABLE pet_state ADD COLUMN last_dust_date TEXT"
+        )
+        await db.execute(
+            "ALTER TABLE pet_state ADD COLUMN current_mood TEXT DEFAULT 'Energetic'"
+        )
+        await db.execute(
+            "ALTER TABLE pet_state ADD COLUMN last_mood_change TEXT"
+        )
+        await db.commit()
+        logger.debug("Migration done: added V3 dust/mood columns to pet_state")
+    except aiosqlite.OperationalError:
+        logger.debug("Migration skip: V3 columns already exist")

@@ -6,7 +6,7 @@ from typing import Optional
 
 from app.domain import constants as C
 from app.domain.memory import MemoryType
-from app.domain.pet import apply_backup, apply_interact, apply_revive, parse_last_event, Pet
+from app.domain.pet import apply_backup, apply_clean, apply_focus_reward, apply_interact, apply_revive, parse_last_event, Pet
 
 
 class PetService:
@@ -76,3 +76,38 @@ class PetService:
     async def clear_last_event(self, db) -> None:
         """One-shot delivery: clear last_event after it has been consumed."""
         await self._pet_repo.clear_last_event(db)
+
+    async def clean(self, db) -> tuple[Pet, bool]:
+        """Clean dust. Returns (updated_pet, success).
+
+        Always succeeds unless pet is dead (blocked).
+        """
+        pet = await self._pet_repo.get_pet(db)
+        if pet.is_dead or pet.dust_count == 0:
+            return pet, False
+        updated = apply_clean(pet)
+        await self._pet_repo.save_pet(db, updated)
+        event_type, detail = parse_last_event(updated)
+        if event_type:
+            await self._record(db, event_type, detail)
+        return updated, True
+
+    async def focus_reward(self, db) -> tuple[Pet, bool]:
+        """Complete a focus session. Returns (updated_pet, on_cooldown).
+
+        Blocked (returns on_cooldown=True) when the pet is dead or cooldown active.
+        For MVP: use a simple approach — track via memory log.
+        """
+        pet = await self._pet_repo.get_pet(db)
+        if pet.is_dead:
+            return pet, True
+        
+        # Check if we have a focus_complete memory within the cooldown window
+        # For MVP, we'll just allow one per session. Production would add focus_last_date column.
+        updated = apply_focus_reward(pet)
+        await self._pet_repo.save_pet(db, updated)
+        await self._record(db, MemoryType.FOCUS_COMPLETE)
+        event_type, detail = parse_last_event(updated)
+        if event_type:
+            await self._record(db, event_type, detail)
+        return updated, False

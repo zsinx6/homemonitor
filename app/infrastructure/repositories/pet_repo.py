@@ -23,6 +23,10 @@ def _row_to_pet(row: aiosqlite.Row) -> Pet:
         last_interaction_date=parse_datetime(row["last_interaction_date"]),
         last_event=row["last_event"],
         last_updated=parse_datetime(row["last_updated"]) or datetime.now(timezone.utc),
+        dust_count=row["dust_count"] if "dust_count" in row.keys() else 0,
+        last_dust_date=parse_datetime(row["last_dust_date"]) if "last_dust_date" in row.keys() else None,
+        current_mood=row["current_mood"] if "current_mood" in row.keys() else "Energetic",
+        last_mood_change=parse_datetime(row["last_mood_change"]) if "last_mood_change" in row.keys() else None,
     )
 
 
@@ -46,12 +50,16 @@ async def save_pet(db: aiosqlite.Connection, pet: Pet, *, commit: bool = True) -
         """UPDATE pet_state SET
             name = ?, level = ?, exp = ?, max_exp = ?, hp = ?, is_dead = ?,
             last_backup_date = ?, last_interaction_date = ?,
-            last_event = ?, last_updated = ?
+            last_event = ?, last_updated = ?,
+            dust_count = ?, last_dust_date = ?,
+            current_mood = ?, last_mood_change = ?
            WHERE id = 1""",
         (
             pet.name, pet.level, pet.exp, pet.max_exp, pet.hp, int(pet.is_dead),
             _fmt(pet.last_backup_date), _fmt(pet.last_interaction_date),
             pet.last_event, _fmt(pet.last_updated),
+            pet.dust_count, _fmt(pet.last_dust_date),
+            pet.current_mood, _fmt(pet.last_mood_change),
         ),
     )
     if commit:

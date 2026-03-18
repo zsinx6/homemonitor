@@ -648,6 +648,7 @@
       <span id="pet-species">BITMON</span> &nbsp; LV.<span id="pet-level">1</span>
       <span id="pet-stage" style="display:block;font-family:var(--sans);font-size:12px;letter-spacing:1px;color:var(--text-muted)">FRESH</span>
       <span id="pet-next-evo" style="display:block;font-family:var(--sans);font-size:12px;color:var(--text-muted);opacity:0.8">next: LV.2</span>
+      <span id="pet-mood" style="display:block;font-family:var(--sans);font-size:11px;color:var(--cyan);margin-top:2px">Energetic</span>
       <span id="down-badge" style="display:none;font-family:var(--sans);font-size:13px;font-weight:600;color:var(--red);margin-top:4px">! DOWN</span>
       <span id="backup-warn-badge" style="display:none;font-family:var(--sans);font-size:13px;font-weight:600;color:var(--yellow);margin-top:2px">BACKUP!</span>
     </div>
@@ -785,6 +786,31 @@
     BACKUP
   </button>
   <div id="backup-cooldown-timer" style="font-family:var(--sans);font-size:13px;color:var(--text-muted);text-align:center;margin-top:8px;display:none"></div>
+
+  <!-- V3: Digital Dust -->
+  <div style="margin-top:24px;border-top:1px solid var(--border);padding-top:16px">
+    <div style="font-size:14px;font-weight:600;color:var(--text-muted);text-align:center;margin-bottom:10px">DIGITAL DUST</div>
+    <div id="dust-count" style="font-size:13px;color:var(--text-muted);text-align:center;margin-bottom:8px">Dust: 0/5</div>
+    <button id="clean-btn" class="nes-btn" style="width:100%" onclick="runClean()">CLEAN</button>
+    <div style="font-family:var(--sans);font-size:12px;color:var(--text-muted);text-align:center;margin-top:8px">
+      Cleaning grants <span style="color:var(--gold)">+2 EXP</span>. Neglect damages the pet!
+    </div>
+  </div>
+
+  <!-- V3: Pomodoro Focus Timer -->
+  <div style="margin-top:24px;border-top:1px solid var(--border);padding-top:16px">
+    <div style="font-size:14px;font-weight:600;color:var(--text-muted);text-align:center;margin-bottom:10px">FOCUS TIMER</div>
+    <div style="font-size:13px;color:var(--text-muted);text-align:center;margin-bottom:8px">
+      Complete a 25-minute focus session
+    </div>
+    <div id="timer-display" style="font-family:monospace;font-size:32px;font-weight:bold;color:var(--cyan);text-align:center;margin:12px 0">25:00</div>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <button id="timer-start-btn" class="nes-btn" style="flex:1" onclick="startTimer()">START</button>
+      <button id="timer-pause-btn" class="nes-btn" style="flex:1;display:none" onclick="pauseTimer()">PAUSE</button>
+      <button id="timer-reset-btn" class="nes-btn" style="flex:1" onclick="resetTimer()">RESET</button>
+    </div>
+    <div id="timer-status" style="font-family:var(--sans);font-size:12px;color:var(--text-muted);text-align:center;margin-top:4px"></div>
+  </div>
 
   <div style="margin-top:24px;border-top:1px solid var(--border);padding-top:16px;display:none" id="revive-section">
     <button id="revive-btn" class="nes-btn is-error" onclick="doRevive()" style="display:none;width:100%">
@@ -1035,6 +1061,17 @@ function renderPet(pet, lastEvent) {
   document.getElementById("pet-species").textContent = (pet.evolution || "Bitmon").toUpperCase();
   document.getElementById("pet-level").textContent = pet.level;
   document.getElementById("pet-stage").textContent = stage.toUpperCase();
+  
+  // V3: Mood display
+  if (pet.current_mood) {
+    document.getElementById("pet-mood").textContent = pet.current_mood;
+  }
+  
+  // V3: Dust count
+  if (pet.dust_count !== undefined) {
+    document.getElementById("dust-count").textContent = `Dust: ${pet.dust_count}/5`;
+  }
+  
   const nextEvoEl = document.getElementById("pet-next-evo");
   if (pet.evolution_next_level != null) {
     nextEvoEl.textContent = "next: LV." + pet.evolution_next_level;
@@ -1594,6 +1631,113 @@ async function exportData() {
   } catch (_) {
     alert("Export failed. Check the console.");
   }
+}
+
+async function runClean() {
+  const btn = document.getElementById("clean-btn");
+  btn.disabled = true;
+  btn.textContent = "CLEANING...";
+  try {
+    const res = await api("POST", "/api/pet/clean");
+    setSpeech(res.phrase);
+    triggerAnim(document.getElementById("digimon-face"), "anim-backup");
+    await poll();
+  } catch (_) {}
+  finally {
+    btn.disabled = false;
+    btn.textContent = "CLEAN";
+  }
+}
+
+// V3: Pomodoro timer globals
+let _timerState = {
+  isRunning: false,
+  isPaused: false,
+  secondsLeft: 25 * 60,
+  intervalId: null
+};
+
+function startTimer() {
+  if (_timerState.isRunning) return;
+  _timerState.isRunning = true;
+  _timerState.isPaused = false;
+  document.getElementById("timer-start-btn").style.display = "none";
+  document.getElementById("timer-pause-btn").style.display = "block";
+  
+  // Mark visibility to detect if user leaves tab
+  const startTime = Date.now();
+  const totalSeconds = _timerState.secondsLeft;
+  
+  _timerState.intervalId = setInterval(() => {
+    if (_timerState.isPaused) return;
+    
+    _timerState.secondsLeft--;
+    renderTimer();
+    
+    if (_timerState.secondsLeft <= 0) {
+      clearInterval(_timerState.intervalId);
+      _timerState.isRunning = false;
+      _timerState.secondsLeft = 0;
+      renderTimer();
+      completeTimer();
+    }
+  }, 1000);
+  
+  // Pause if tab hidden
+  const handleVisibility = () => {
+    if (document.hidden && _timerState.isRunning && !_timerState.isPaused) {
+      pauseTimer();
+      document.getElementById("timer-status").textContent = "Paused (tab hidden)";
+    }
+  };
+  document.addEventListener("visibilitychange", handleVisibility);
+  renderTimer();
+}
+
+function pauseTimer() {
+  if (!_timerState.isRunning) return;
+  _timerState.isPaused = true;
+  clearInterval(_timerState.intervalId);
+  document.getElementById("timer-start-btn").style.display = "block";
+  document.getElementById("timer-pause-btn").style.display = "none";
+  document.getElementById("timer-status").textContent = "Paused";
+}
+
+function resetTimer() {
+  if (_timerState.intervalId) clearInterval(_timerState.intervalId);
+  _timerState = {
+    isRunning: false,
+    isPaused: false,
+    secondsLeft: 25 * 60,
+    intervalId: null
+  };
+  document.getElementById("timer-start-btn").style.display = "block";
+  document.getElementById("timer-pause-btn").style.display = "none";
+  document.getElementById("timer-status").textContent = "";
+  renderTimer();
+}
+
+function renderTimer() {
+  const mins = Math.floor(_timerState.secondsLeft / 60);
+  const secs = _timerState.secondsLeft % 60;
+  document.getElementById("timer-display").textContent = 
+    `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+async function completeTimer() {
+  document.getElementById("timer-status").textContent = "🎉 Complete! Submitting...";
+  try {
+    const res = await api("POST", "/api/pet/focus_reward");
+    setSpeech(res.phrase || "Great focus session! The pet is proud of you!");
+    triggerAnim(document.getElementById("digimon-face"), "anim-levelup");
+    await poll();
+  } catch (e) {
+    document.getElementById("timer-status").textContent = "Failed to submit. Try again.";
+  }
+  setTimeout(() => {
+    resetTimer();
+    document.getElementById("timer-status").textContent = "";
+  }, 2000);
 }
 
 async function sendChat() {

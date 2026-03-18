@@ -42,7 +42,20 @@ BACKUP_COOLDOWN_HOURS = 1       # minimum hours between backup rewards
 # Backup overdue
 BACKUP_OVERDUE_DAYS = 30
 
-# Monitoring
+# Digital Dust (V3)
+MAX_DUST = 5
+DUST_SPAWN_HOURS = 5                # dust spawns at most once per 5 hours
+DUST_HP_DRAIN_CYCLE_MODULO = 3     # drain -1 HP every 3 cycles at max dust
+EXP_CLEAN_REWARD = 2                # EXP granted when cleaning dust
+HP_DRAIN_MAX_DUST = 1               # HP lost per drain event at max dust
+
+# Daily Mood (V3)
+MOODS = ["Energetic", "Melancholy", "Rebellious", "Philosophical", "Anxious", "Zen"]
+
+# Pomodoro Focus (V3)
+FOCUS_COOLDOWN_MINUTES = 30
+EXP_FOCUS_REWARD = 15
+HP_FOCUS_REWARD = 2
 MONITOR_INTERVAL_SECONDS = 600
 MONITOR_CYCLE_TIMEOUT_SECONDS = 120   # abort if a cycle takes longer than this
 HTTP_TIMEOUT_SECONDS = 10

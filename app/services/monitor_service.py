@@ -35,6 +35,7 @@ class MonitorService:
         self._notifier = notifier
         self._notify_on_recovery = notify_on_recovery
         self._notify_on_death = notify_on_death
+        self._cycle_count = 0  # Track cycles for dust HP drain modulo
         # Build unified registry from explicit registry + legacy checkers
         self._checker_registry: dict[str, ServerChecker] = {}
         if checker_registry:
@@ -95,11 +96,15 @@ class MonitorService:
         ]
 
         pet = await self._pet_repo.get_pet(db)
+        self._cycle_count += 1
+        
+        # Apply monitor cycle first (HP gain/loss from servers)
         updated_pet = apply_monitor_cycle(
             pet,
             down_server_names=all_currently_down_names,
             recovered_server_names=newly_recovered_names,
         )
+        
         # Suppress server_down event when no new failure occurred this cycle
         if (
             not newly_down_names
@@ -107,6 +112,19 @@ class MonitorService:
             and updated_pet.last_event.startswith("server_down:")
         ):
             updated_pet = replace(updated_pet, last_event=None)
+        
+        # Apply V3 mechanics (dust spawn, mood rotation, dust HP drain)
+        # Only apply if pet is alive to avoid state changes on dead pets
+        if not updated_pet.is_dead:
+            from app.domain.pet import apply_dust_spawn, apply_mood_rotation, apply_dust_hp_drain
+            updated_pet = apply_dust_spawn(updated_pet)
+            updated_pet = apply_mood_rotation(updated_pet)
+            updated_pet = apply_dust_hp_drain(updated_pet, self._cycle_count)
+            
+            # Check death from dust drain
+            if updated_pet.hp == 0 and not pet.is_dead:
+                updated_pet = replace(updated_pet, is_dead=True, last_event="death")
+        
         await self._pet_repo.save_pet(db, updated_pet)
 
         # Record memories for significant events this cycle
