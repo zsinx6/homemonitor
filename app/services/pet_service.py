@@ -80,13 +80,17 @@ class PetService:
     async def clean(self, db) -> tuple[Pet, bool]:
         """Clean dust. Returns (updated_pet, success).
 
-        Always succeeds unless pet is dead (blocked).
+        Returns success=False if the pet is dead or there is no dust.
         """
         pet = await self._pet_repo.get_pet(db)
         if pet.is_dead or pet.dust_count == 0:
             return pet, False
+        # Record DUST_CLEANED memory *before* EXP gain so a concurrent level-up
+        # does not overwrite the dust_cleaned last_event in parse_last_event.
+        await self._record(db, MemoryType.DUST_CLEANED)
         updated = apply_clean(pet)
         await self._pet_repo.save_pet(db, updated)
+        # Still capture any level-up / digivolution that EXP triggered
         event_type, detail = parse_last_event(updated)
         if event_type:
             await self._record(db, event_type, detail)
@@ -95,18 +99,24 @@ class PetService:
     async def focus_reward(self, db) -> tuple[Pet, bool]:
         """Complete a focus session. Returns (updated_pet, on_cooldown).
 
-        Blocked (returns on_cooldown=True) when the pet is dead or cooldown active.
-        For MVP: use a simple approach — track via memory log.
+        Blocked (returns on_cooldown=True) when the pet is dead or within the
+        FOCUS_COOLDOWN_MINUTES window since the last completed session.
         """
         pet = await self._pet_repo.get_pet(db)
         if pet.is_dead:
             return pet, True
-        
-        # Check if we have a focus_complete memory within the cooldown window
-        # For MVP, we'll just allow one per session. Production would add focus_last_date column.
+
+        # Enforce cooldown using last_focus_date persisted on the pet row
+        if pet.last_focus_date is not None:
+            elapsed = (datetime.now(timezone.utc) - pet.last_focus_date).total_seconds()
+            if elapsed < C.FOCUS_COOLDOWN_MINUTES * 60:
+                return pet, True
+
+        # Record FOCUS_COMPLETE memory before EXP gain (level-up must not overwrite it)
+        await self._record(db, MemoryType.FOCUS_COMPLETE)
         updated = apply_focus_reward(pet)
         await self._pet_repo.save_pet(db, updated)
-        await self._record(db, MemoryType.FOCUS_COMPLETE)
+        # Capture any level-up / digivolution triggered by the EXP gain
         event_type, detail = parse_last_event(updated)
         if event_type:
             await self._record(db, event_type, detail)

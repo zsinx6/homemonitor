@@ -194,21 +194,18 @@ async def init_db(db: aiosqlite.Connection) -> None:
             await db.execute("PRAGMA foreign_keys = ON")
         except Exception:
             pass
-    # Migration: add V3 dust/mood columns to pet_state
-    try:
-        await db.execute(
-            "ALTER TABLE pet_state ADD COLUMN dust_count INTEGER NOT NULL DEFAULT 0"
-        )
-        await db.execute(
-            "ALTER TABLE pet_state ADD COLUMN last_dust_date TEXT"
-        )
-        await db.execute(
-            "ALTER TABLE pet_state ADD COLUMN current_mood TEXT DEFAULT 'Energetic'"
-        )
-        await db.execute(
-            "ALTER TABLE pet_state ADD COLUMN last_mood_change TEXT"
-        )
-        await db.commit()
-        logger.debug("Migration done: added V3 dust/mood columns to pet_state")
-    except aiosqlite.OperationalError:
-        logger.debug("Migration skip: V3 columns already exist")
+    # Migration: add V3 dust/mood/focus columns to pet_state (each in its own guard)
+    _v3_migrations = [
+        ("dust_count",     "ALTER TABLE pet_state ADD COLUMN dust_count INTEGER NOT NULL DEFAULT 0"),
+        ("last_dust_date", "ALTER TABLE pet_state ADD COLUMN last_dust_date TEXT"),
+        ("current_mood",   "ALTER TABLE pet_state ADD COLUMN current_mood TEXT DEFAULT 'Energetic'"),
+        ("last_mood_change", "ALTER TABLE pet_state ADD COLUMN last_mood_change TEXT"),
+        ("last_focus_date",  "ALTER TABLE pet_state ADD COLUMN last_focus_date TEXT"),
+    ]
+    for col_name, sql in _v3_migrations:
+        try:
+            await db.execute(sql)
+            await db.commit()
+            logger.debug("Migration done: added column %s to pet_state", col_name)
+        except aiosqlite.OperationalError:
+            logger.debug("Migration skip: column %s already exists", col_name)

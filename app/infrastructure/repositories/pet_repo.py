@@ -11,6 +11,7 @@ from app.infrastructure.repositories.common import parse_datetime
 
 
 def _row_to_pet(row: aiosqlite.Row) -> Pet:
+    keys = row.keys()
     return Pet(
         id=row["id"],
         name=row["name"],
@@ -23,10 +24,11 @@ def _row_to_pet(row: aiosqlite.Row) -> Pet:
         last_interaction_date=parse_datetime(row["last_interaction_date"]),
         last_event=row["last_event"],
         last_updated=parse_datetime(row["last_updated"]) or datetime.now(timezone.utc),
-        dust_count=row["dust_count"] if "dust_count" in row.keys() else 0,
-        last_dust_date=parse_datetime(row["last_dust_date"]) if "last_dust_date" in row.keys() else None,
-        current_mood=row["current_mood"] if "current_mood" in row.keys() else "Energetic",
-        last_mood_change=parse_datetime(row["last_mood_change"]) if "last_mood_change" in row.keys() else None,
+        dust_count=row["dust_count"] if "dust_count" in keys else 0,
+        last_dust_date=parse_datetime(row["last_dust_date"]) if "last_dust_date" in keys else None,
+        current_mood=row["current_mood"] if "current_mood" in keys else "Energetic",
+        last_mood_change=parse_datetime(row["last_mood_change"]) if "last_mood_change" in keys else None,
+        last_focus_date=parse_datetime(row["last_focus_date"]) if "last_focus_date" in keys else None,
     )
 
 
@@ -52,7 +54,8 @@ async def save_pet(db: aiosqlite.Connection, pet: Pet, *, commit: bool = True) -
             last_backup_date = ?, last_interaction_date = ?,
             last_event = ?, last_updated = ?,
             dust_count = ?, last_dust_date = ?,
-            current_mood = ?, last_mood_change = ?
+            current_mood = ?, last_mood_change = ?,
+            last_focus_date = ?
            WHERE id = 1""",
         (
             pet.name, pet.level, pet.exp, pet.max_exp, pet.hp, int(pet.is_dead),
@@ -60,6 +63,7 @@ async def save_pet(db: aiosqlite.Connection, pet: Pet, *, commit: bool = True) -
             pet.last_event, _fmt(pet.last_updated),
             pet.dust_count, _fmt(pet.last_dust_date),
             pet.current_mood, _fmt(pet.last_mood_change),
+            _fmt(pet.last_focus_date),
         ),
     )
     if commit:

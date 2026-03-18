@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends
 import aiosqlite
 
 from app.api.dependencies import get_db, get_pet_service, get_phrase_selector
-from app.api.models import PetBackupResponse, PetInteractResponse, PetRenameRequest, PetResponse
+from app.api.models import PetBackupResponse, PetCleanResponse, PetFocusResponse, PetInteractResponse, PetRenameRequest, PetResponse
 from app.domain import constants as C
 from app.domain.pet import get_next_evolution_level
 from app.domain.phrases import PhraseContext
@@ -42,6 +42,13 @@ async def _build_pet_response(db, phrase_selector, pet_service: PetService) -> P
         backup_remaining = max(0, ceil(C.BACKUP_COOLDOWN_HOURS * 3600 - elapsed_s))
     else:
         backup_remaining = 0
+
+    # Compute focus cooldown remaining
+    if pet.last_focus_date is not None:
+        elapsed_s = (datetime.now(timezone.utc) - pet.last_focus_date).total_seconds()
+        focus_remaining = max(0, ceil(C.FOCUS_COOLDOWN_MINUTES * 60 - elapsed_s))
+    else:
+        focus_remaining = 0
 
     # Decode last_event — may carry an encoded server name as detail
     event_type, event_detail = _decode_event(pet.last_event)
@@ -110,6 +117,7 @@ async def _build_pet_response(db, phrase_selector, pet_service: PetService) -> P
         last_interaction_date=pet.last_interaction_date,
         last_updated=pet.last_updated,
         backup_cooldown_remaining_seconds=backup_remaining,
+        focus_cooldown_remaining_seconds=focus_remaining,
         days_since_backup=snapshot.days_since_backup,
         dust_count=pet.dust_count,
         current_mood=pet.current_mood,
@@ -190,13 +198,13 @@ async def rename_pet(
     return await _build_pet_response(db, phrase_selector, pet_service)
 
 
-@router.post("/pet/clean", response_model=dict)
+@router.post("/pet/clean", response_model=PetCleanResponse)
 async def clean(
     db: aiosqlite.Connection = Depends(get_db),
     pet_service: PetService = Depends(get_pet_service),
     phrase_selector=Depends(get_phrase_selector),
 ):
-    """Clean the pet's dust. Gains EXP."""
+    """Clean the pet's dust. Grants EXP on success."""
     pet, success = await pet_service.clean(db)
     snapshot = await context_service.build_snapshot(db)
     ctx = {"__context__": snapshot, "species": snapshot.pet_species}
@@ -206,21 +214,21 @@ async def clean(
         phrase = "No dust to clean."
     else:
         phrase = await phrase_selector.select(PhraseContext.INTERACT, ctx)
-    return {
-        "exp": pet.exp,
-        "phrase": phrase,
-        "success": success,
-        "dust_count": pet.dust_count,
-    }
+    return PetCleanResponse(
+        exp=pet.exp,
+        phrase=phrase,
+        success=success,
+        dust_count=pet.dust_count,
+    )
 
 
-@router.post("/pet/focus_reward", response_model=dict)
+@router.post("/pet/focus_reward", response_model=PetFocusResponse)
 async def focus_reward(
     db: aiosqlite.Connection = Depends(get_db),
     pet_service: PetService = Depends(get_pet_service),
     phrase_selector=Depends(get_phrase_selector),
 ):
-    """Complete a focus session. Gains EXP and HP."""
+    """Complete a focus session. Grants EXP and HP (30-minute cooldown)."""
     pet, on_cooldown = await pet_service.focus_reward(db)
     snapshot = await context_service.build_snapshot(db)
     ctx = {"__context__": snapshot, "species": snapshot.pet_species}
@@ -229,10 +237,10 @@ async def focus_reward(
     elif on_cooldown:
         phrase = "You need a break first! Focus cooldown active."
     else:
-        phrase = await phrase_selector.select(PhraseContext.BACKUP, ctx)  # reuse backup phrase
-    return {
-        "exp": pet.exp,
-        "hp": pet.hp,
-        "phrase": phrase,
-        "on_cooldown": on_cooldown,
-    }
+        phrase = await phrase_selector.select(PhraseContext.BACKUP, ctx)
+    return PetFocusResponse(
+        exp=pet.exp,
+        hp=pet.hp,
+        phrase=phrase,
+        on_cooldown=on_cooldown,
+    )

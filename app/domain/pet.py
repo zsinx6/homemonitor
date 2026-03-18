@@ -5,6 +5,7 @@ that take a Pet and return a new Pet (immutable style via dataclass replace).
 """
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -29,6 +30,7 @@ class Pet:
     last_dust_date: Optional[datetime] = None
     current_mood: str = "Energetic"
     last_mood_change: Optional[datetime] = None
+    last_focus_date: Optional[datetime] = None
 
 
 def _now() -> datetime:
@@ -198,15 +200,23 @@ def apply_revive(pet: Pet) -> Pet:
 
 
 def apply_clean(pet: Pet) -> Pet:
-    """Player cleans dust: reset dust_count, gain EXP."""
-    updated = replace(pet, dust_count=0, last_event="dust_cleaned")
+    """Player cleans dust: reset dust_count, gain EXP.
+
+    The dust_cleaned event is recorded via a direct memory call in the service
+    layer before EXP is applied, so a level-up cannot overwrite it.
+    """
+    updated = replace(pet, dust_count=0)
     return _apply_exp_gain(updated, C.EXP_CLEAN_REWARD)
 
 
 def apply_focus_reward(pet: Pet) -> Pet:
-    """Player completes a focus session: gain EXP and HP."""
+    """Player completes a focus session: gain EXP and HP.
+
+    The focus_complete event is recorded via a direct memory call in the
+    service layer before EXP is applied, so a level-up cannot overwrite it.
+    """
     new_hp = _clamp(pet.hp + C.HP_FOCUS_REWARD, C.HP_MIN, C.HP_MAX)
-    updated = replace(pet, hp=new_hp, last_event="focus_complete")
+    updated = replace(pet, hp=new_hp, last_focus_date=_now())
     return _apply_exp_gain(updated, C.EXP_FOCUS_REWARD)
 
 
@@ -236,47 +246,38 @@ def apply_dust_spawn(pet: Pet) -> Pet:
 
 def apply_mood_rotation(pet: Pet) -> Pet:
     """Attempt to rotate the pet's mood. Called once per monitor cycle.
-    
-    Mood rotates at most once per 24 hours. On rotation, picks a random mood
-    from the MOODS list and returns updated Pet.
+
+    Mood rotates at most once per 24 hours. Guarantees a *different* mood is
+    selected so the change is always visible to the user.
     Returns unchanged if not time for rotation yet.
     """
-    import random
-    
     now = _now()
-    
+
     # Check if enough time has passed since last mood change
     if pet.last_mood_change is not None:
         elapsed = now - pet.last_mood_change
         if elapsed < timedelta(hours=24):
             return pet
-    
-    # Rotate to a new random mood
-    new_mood = random.choice(C.MOODS)
+
+    # Rotate to a different mood than current
+    available = [m for m in C.MOODS if m != pet.current_mood]
+    new_mood = random.choice(available) if available else pet.current_mood
     return replace(pet, current_mood=new_mood, last_mood_change=now)
 
 
-def apply_dust_hp_drain(pet: Pet, cycle_count: int) -> Pet:
-    """Apply HP drain if at max dust. Called once per monitor cycle with a counter.
-    
-    If dust_count == MAX_DUST, drain -1 HP once every DUST_HP_DRAIN_CYCLE_MODULO cycles.
-    This happens to prevent extreme damage and allow the pet to survive ~5 hours of neglect.
-    
-    Args:
-        pet: The pet.
-        cycle_count: Monotonic cycle number (can use pet.last_updated epoch seconds mod 10).
-    
+def apply_dust_hp_drain(pet: Pet) -> Pet:
+    """Apply HP drain if at max dust. Drains C.HP_DRAIN_MAX_DUST HP.
+
+    The caller (monitor_service) is responsible for throttling this to once
+    every DUST_HP_DRAIN_CYCLE_MODULO cycles using a deterministic timestamp check.
+
     Returns:
-        Updated Pet with reduced HP, or unchanged if not time to drain yet.
+        Updated Pet with reduced HP, or unchanged if dust not at max.
     """
     if pet.dust_count < C.MAX_DUST:
         return pet
-    
-    # Drain once every N cycles
-    if cycle_count % C.DUST_HP_DRAIN_CYCLE_MODULO != 0:
-        return pet
-    
-    new_hp = _clamp(pet.hp - 1, C.HP_MIN, C.HP_MAX)
+
+    new_hp = _clamp(pet.hp - C.HP_DRAIN_MAX_DUST, C.HP_MIN, C.HP_MAX)
     return replace(pet, hp=new_hp)
 
 
