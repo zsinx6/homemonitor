@@ -21,6 +21,9 @@ Built for a Raspberry Pi Zero 2W. Runs in a browser. Optionally powered by Gemin
 - **Death & revival** — HP hits 0 → pet dies; revive costs EXP reset and restores 5 HP
 - **Memory / history log** — every significant event (server down, recovery, task done, backup, digivolution, rename, maintenance, death, revival) is persisted and shown in a History tab and fed to the LLM as context
 - **Gemini chat** — optional; when `GEMINI_API_KEY` is set you can chat with the pet in natural language; the last 10 significant events are injected as context so the pet remembers what happened
+- **Digital Dust** — the pet accumulates dust every 5 hours (max 5); clean it with `POST /api/pet/clean` (+2 EXP) or HP drains at max dust
+- **Focus sessions** — complete a Pomodoro-style work block with `POST /api/pet/focus_reward` (+15 EXP, +2 HP, 30-min cooldown)
+- **Daily Mood** — the pet cycles through moods (Energetic, Melancholy, Rebellious, Philosophical, Anxious, Zen) that influence its phrases; returned as `current_mood` in `GET /api/pet`
 - **Mobile-first dashboard** — sticky pet header visible at all times, 4 tabs (INFRA / TASKS / MAINT / HIST), no build step, no framework
 
 ---
@@ -124,6 +127,8 @@ All endpoints are prefixed `/api`.
 | `POST` | `/api/pet/backup` | Run a backup (+30 EXP, +5 HP, 1 h cooldown) |
 | `POST` | `/api/pet/revive` | Revive dead pet (resets EXP, restores 5 HP) |
 | `PATCH` | `/api/pet/rename` | Set a custom name `{"name": "Sparky"}` |
+| `POST` | `/api/pet/clean` | Clean accumulated dust (+2 EXP, resets dust counter) |
+| `POST` | `/api/pet/focus_reward` | Complete a focus session (+15 EXP, +2 HP, 30-min cooldown) |
 
 ### Servers
 
@@ -170,8 +175,10 @@ All endpoints are prefixed `/api`.
 |-------|-----|
 | All servers UP (per cycle) | +1 |
 | Interact (pet) | +2 |
+| Clean dust | +2 |
 | Complete task | +20 |
 | Run backup | +30 |
+| Complete focus session | +15 |
 
 Level-up threshold starts at 100 EXP and scales ×1.5 each level. Death resets EXP to 0.
 
@@ -184,10 +191,28 @@ Level-up threshold starts at 100 EXP and scales ×1.5 each level. Death resets E
 | Pet interact | +1 |
 | Complete task | +1 |
 | Run backup | +5 |
+| Complete focus session | +2 |
 | Lonely (>24 h without interaction) | −1/cycle |
 | Backup overdue (>30 days) | −1/cycle |
+| Dust at max (5 units), every 3rd cycle | −1/cycle |
 
 HP max is 10. When HP reaches 0 the pet dies and must be revived.
+
+### Digital Dust
+
+The pet passively accumulates dust over time (+1 unit every 5 hours, max 5). At maximum dust, the pet loses −1 HP every third monitor cycle until cleaned.
+
+Use `POST /api/pet/clean` to clean the dust (+2 EXP, resets the counter). The `dust_count` field is returned by `GET /api/pet`.
+
+### Focus Sessions
+
+Reward yourself (and your pet) for completing a focused work block — a Pomodoro sprint or any uninterrupted session.
+
+`POST /api/pet/focus_reward` → +15 EXP, +2 HP, 30-minute cooldown enforced server-side.
+
+### Daily Mood
+
+Each monitor cycle the pet is assigned one of six moods: **Energetic**, **Melancholy**, **Rebellious**, **Philosophical**, **Anxious**, or **Zen**. Mood influences the pet's phrases and is returned as `current_mood` in `GET /api/pet`.
 
 ### Evolution line
 
