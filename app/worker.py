@@ -78,6 +78,11 @@ async def trigger_cycle(db_path: str) -> None:
     await _run_one_cycle(db_path)
 
 
+def get_service() -> MonitorService:
+    """Return the shared MonitorService singleton (creates it if needed)."""
+    return _get_service()
+
+
 async def monitor_loop(db_path: str) -> None:
     """Runs forever until cancelled. Opens a fresh DB connection each cycle."""
     _get_service()  # warm up singleton before first tick

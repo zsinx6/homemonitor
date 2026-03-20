@@ -11,14 +11,14 @@ from app.api.dependencies import get_db
 from app.api.models import DailyStatOut, MoveServerRequest, ServerCreate, ServerOut, ServerUpdate
 from app.domain.memory import MemoryType
 from app.infrastructure.repositories import memory_repo, server_repo
-from app.worker import trigger_cycle
+from app.worker import get_service, trigger_cycle
 
 router = APIRouter()
 
 
 async def _server_with_stats(db, srv) -> ServerOut:
     from datetime import datetime, timezone
-    daily = await server_repo.get_daily_stats(db, srv.id, limit=7)
+    daily = await server_repo.get_daily_stats(db, srv.id, limit=90)
 
     ssl_expiry: datetime | None = None
     ssl_days: int | None = None
@@ -132,3 +132,17 @@ async def move_server(
     await server_repo.move_server(db, server_id, body.direction)
     servers = await server_repo.list_servers(db)
     return [await _server_with_stats(db, s) for s in servers]
+
+
+@router.post("/servers/{server_id}/check", response_model=ServerOut)
+async def force_check(
+    server_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Trigger an immediate check for a single server and return its updated state."""
+    srv = await server_repo.get_server(db, server_id)
+    if srv is None:
+        raise HTTPException(status_code=404, detail="Server not found")
+    await get_service().check_single(db, server_id)
+    srv = await server_repo.get_server(db, server_id)
+    return await _server_with_stats(db, srv)

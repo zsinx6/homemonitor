@@ -225,6 +225,72 @@ class MonitorService:
                     tags=["skull", "rotating_light"],
                 )
 
+    async def check_single(self, db, server_id: int) -> None:
+        """Run an immediate check for one server and persist results.
+
+        Unlike run_cycle, this does not affect pet HP or V3 mechanics.
+        Safe to call concurrently with the background cycle.
+        """
+        server = await self._server_repo.get_server(db, server_id)
+        if server is None:
+            return
+        result = await self._check_server(
+            server.id, server.name, server.address, server.port,
+            server.type, server.check_params,
+        )
+        checked_at = datetime.now(timezone.utc)
+        date_str = checked_at.strftime("%Y-%m-%d")
+        await self._server_repo.update_server_check_result(
+            db, result.server_id, result.is_up, result.error, checked_at,
+            latency_ms=result.latency_ms,
+            ssl_expiry_date=result.ssl_expiry_date,
+        )
+        await self._server_repo.upsert_daily_stat(
+            db, result.server_id, date_str, result.is_up,
+            latency_ms=result.latency_ms,
+        )
+        # Public IP change detection
+        if result.detected_ip is not None:
+            params = dict(server.check_params or {})
+            last_ip = params.get("last_ip")
+            if last_ip is not None and last_ip != result.detected_ip:
+                await self._record(
+                    db, MemoryType.PUBLIC_IP_CHANGED,
+                    f"{last_ip} → {result.detected_ip}",
+                )
+                if self._notifier:
+                    await self._notifier.notify(
+                        title="🌐 Public IP changed",
+                        message=f"{server.name}: {last_ip} → {result.detected_ip}",
+                        priority="default",
+                        tags=["globe_with_meridians"],
+                    )
+            params["last_ip"] = result.detected_ip
+            await self._server_repo.update_server_check_params(db, result.server_id, params)
+        # SSL expiry warnings (throttled, same logic as run_cycle)
+        if result.ssl_expiry_date is not None:
+            now = datetime.now(timezone.utc)
+            try:
+                expiry = datetime.fromisoformat(result.ssl_expiry_date)
+                days_left = (expiry - now).days
+            except Exception:
+                days_left = 999
+            if days_left <= _SSL_WARN_DAYS:
+                last_warned = self._ssl_warned_at.get(result.server_id)
+                if not last_warned or (now - last_warned) >= _SSL_WARN_INTERVAL:
+                    self._ssl_warned_at[result.server_id] = now
+                    await self._record(
+                        db, MemoryType.SSL_EXPIRY_WARNING,
+                        f"{server.name}: {days_left}d remaining",
+                    )
+                    if self._notifier and days_left <= _SSL_NTFY_DAYS:
+                        await self._notifier.notify(
+                            title="⚠️ SSL cert expiring soon",
+                            message=f"{server.name} cert expires in {days_left} day(s).",
+                            priority="high",
+                            tags=["lock", "warning"],
+                        )
+
     async def _check_server(
         self,
         server_id: int,

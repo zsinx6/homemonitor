@@ -1192,6 +1192,38 @@ function uptimeClass(pct) {
   return "red";
 }
 
+function uptimePctColor(pct) {
+  const n = parseFloat(pct);
+  return n >= 95 ? "var(--green)" : n >= 70 ? "var(--yellow)" : "var(--red)";
+}
+
+function uptimePeriod(dailyStats, days) {
+  const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+  const inRange = (dailyStats || []).filter(d => d.date >= cutoff);
+  if (!inRange.length) return null;
+  const total = inRange.reduce((s, d) => s + d.total_checks, 0);
+  const ok    = inRange.reduce((s, d) => s + d.successful_checks, 0);
+  return total ? ((ok / total) * 100).toFixed(1) : null;
+}
+
+function buildSparkline(dailyStats) {
+  const days = [...(dailyStats || [])].sort((a, b) => a.date > b.date ? 1 : -1).slice(-7);
+  const vals = days.map(d => d.avg_response_ms).filter(v => v != null);
+  if (vals.length < 2) return "";
+  const W = 84, H = 22, pad = 2;
+  const minV = Math.min(...vals), maxV = Math.max(...vals);
+  const range = maxV - minV || 1;
+  const pts = vals.map((v, i) => {
+    const x = (pad + (i / (vals.length - 1)) * (W - pad * 2)).toFixed(1);
+    const y = (pad + (1 - (v - minV) / range) * (H - pad * 2)).toFixed(1);
+    return `${x},${y}`;
+  }).join(" ");
+  const avgMs = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="vertical-align:middle" title="7d avg latency: ${avgMs}ms">
+    <polyline points="${pts}" fill="none" stroke="var(--green)" stroke-width="1.5" stroke-linejoin="round"/>
+  </svg><span style="font-family:var(--sans);font-size:11px;color:var(--text-muted);margin-left:4px">${avgMs}ms avg</span>`;
+}
+
 function renderServers(servers) {
   // Update down-server badge in the sticky header
   const downCount = servers.filter(s => s.status === "DOWN").length;
@@ -1235,12 +1267,30 @@ function renderServers(servers) {
     // Current public IP (public_ip type only)
     const currentIp = isPublicIp && s.check_params?.last_ip ? s.check_params.last_ip : null;
 
-    // 7-day grid — sort ascending so today is rightmost
+    // Sort all stats ascending; last 7 for grid, all for period calculations
     const sorted = [...(s.daily_stats || [])].sort((a, b) => a.date > b.date ? 1 : -1);
-    const daySquares = sorted.map(d =>
+    const last7  = sorted.slice(-7);
+    const daySquares = last7.map(d =>
       `<div class="uptime-day ${uptimeClass(d.uptime_percent)}"
-            data-tip="${d.date}: ${d.uptime_percent.toFixed(1)}%"></div>`
+            title="${d.date}: ${d.uptime_percent.toFixed(1)}%${d.avg_response_ms != null ? ' · ' + d.avg_response_ms + 'ms' : ''}"></div>`
     ).join("");
+
+    // Uptime breakdown by period
+    const u7  = uptimePeriod(s.daily_stats, 7);
+    const u30 = uptimePeriod(s.daily_stats, 30);
+    const u90 = uptimePeriod(s.daily_stats, 90);
+    const periodParts = [];
+    if (u7  != null) periodParts.push(`<span title="Last 7 days"  style="color:${uptimePctColor(u7)}" >7d: ${u7}%</span>`);
+    if (u30 != null) periodParts.push(`<span title="Last 30 days" style="color:${uptimePctColor(u30)}">30d: ${u30}%</span>`);
+    if (u90 != null) periodParts.push(`<span title="Last 90 days" style="color:${uptimePctColor(u90)}">90d: ${u90}%</span>`);
+    const periodsHtml = periodParts.length
+      ? `<div style="font-family:var(--sans);font-size:12px;margin-bottom:6px;display:flex;gap:10px">${periodParts.join("")}</div>`
+      : "";
+
+    // Latency sparkline (7-day avg)
+    const sparkHtml = buildSparkline(s.daily_stats)
+      ? `<div style="margin-bottom:4px">${buildSparkline(s.daily_stats)}</div>`
+      : "";
 
     return `
 <div class="server-card ${isDown ? "down" : ""} ${isMaint ? "maintenance" : ""}" data-id="${s.id}">
@@ -1254,6 +1304,8 @@ function renderServers(servers) {
     <button class="nes-btn ${isMaint ? "is-warning" : ""}" style="font-size:13px!important;padding:5px 10px"
             title="${isMaint ? "Disable maintenance" : "Enable maintenance"}"
             onclick="toggleMaintenance(${s.id})">MNT</button>
+    <button class="nes-btn is-primary" style="font-size:13px!important;padding:5px 10px"
+            id="chk-btn-${s.id}" title="Force re-check now" onclick="forceCheck(${s.id})">CHK</button>
     <button class="nes-btn" style="font-size:13px!important;padding:5px 10px"
             title="Edit server" onclick="openEditServer(${s.id})">EDIT</button>
     <button class="nes-btn" style="font-size:13px!important;padding:5px 9px"
@@ -1271,8 +1323,10 @@ function renderServers(servers) {
   <div class="uptime-bar-track">
     <div class="uptime-bar-fill ${barClass}" style="width:${uptimePct}%"></div>
   </div>
+  ${periodsHtml}
   <div style="font-family:var(--sans);font-size:13px;color:var(--text-muted);margin-bottom:4px">LAST 7 DAYS</div>
   <div class="uptime-grid">${daySquares || '<div style="font-family:var(--sans);font-size:13px;color:var(--text-muted)">No data yet</div>'}</div>
+  ${sparkHtml}
   ${s.last_checked ? `<div style="font-family:var(--sans);font-size:12px;color:var(--text-muted)">Last checked: ${new Date(s.last_checked).toLocaleTimeString()}${latencyHtml}${sslHtml}</div>` : ""}
 </div>`;
   }).join("");
@@ -1527,6 +1581,20 @@ async function deleteServer(id) {
     await api("DELETE", `/api/servers/${id}`);
     await poll();
   } catch (_) {}
+}
+
+async function forceCheck(id) {
+  const btn = document.getElementById(`chk-btn-${id}`);
+  if (btn) { btn.disabled = true; btn.textContent = "..."; }
+  try {
+    const updated = await api("POST", `/api/servers/${id}/check`);
+    // Update just this server in state and re-render
+    const idx = state.servers.findIndex(s => s.id === id);
+    if (idx !== -1) state.servers[idx] = updated;
+    renderServers(state.servers);
+  } catch (_) {
+    if (btn) { btn.disabled = false; btn.textContent = "CHK"; }
+  }
 }
 
 async function toggleMaintenance(id) {
