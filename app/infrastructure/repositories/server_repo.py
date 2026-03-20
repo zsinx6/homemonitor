@@ -37,6 +37,7 @@ class DailyStatRow:
     total_checks: int
     successful_checks: int
     uptime_percent: float
+    avg_response_ms: float | None = None
 
 
 def _row_to_server(row: aiosqlite.Row) -> ServerRow:
@@ -254,7 +255,7 @@ async def get_daily_stats(
     """Return up to ``limit`` most recent daily stat rows for a server."""
     db.row_factory = aiosqlite.Row
     async with db.execute(
-        """SELECT date, total_checks, successful_checks, uptime_percent
+        """SELECT date, total_checks, successful_checks, uptime_percent, avg_response_ms
            FROM server_daily_stats
            WHERE server_id = ?
            ORDER BY date DESC
@@ -268,6 +269,7 @@ async def get_daily_stats(
             total_checks=r["total_checks"],
             successful_checks=r["successful_checks"],
             uptime_percent=r["uptime_percent"],
+            avg_response_ms=r["avg_response_ms"],
         )
         for r in rows
     ]

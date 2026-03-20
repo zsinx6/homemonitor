@@ -833,14 +833,14 @@ class TestExportImport:
         names = [t["task"] for t in tasks]
         assert "imported-task" in names
 
-    async def test_import_skips_completed_tasks(self, client):
+    async def test_import_includes_completed_tasks(self, client):
         r = await client.post("/api/import", json={
             "servers": [{"name": "s2", "address": "http://s2", "type": "http"}],
             "tasks": [
                 {"task": "done-task", "priority": "normal", "is_completed": True}
             ]
         })
-        assert r.json()["imported_tasks"] == 0
+        assert r.json()["imported_tasks"] == 1
 
     async def test_import_invalid_server_type_defaults_to_http(self, client):
         r = await client.post("/api/import", json={
