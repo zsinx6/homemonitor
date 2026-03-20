@@ -27,6 +27,8 @@ class ServerRow:
     maintenance_mode: bool = False
     position: int = 0
     check_params: Optional[dict] = None
+    last_response_ms: Optional[int] = None
+    ssl_expiry_date: Optional[str] = None
 
 
 @dataclass
@@ -39,6 +41,7 @@ class DailyStatRow:
 
 def _row_to_server(row: aiosqlite.Row) -> ServerRow:
     raw_params = row["check_params"] if "check_params" in row.keys() else None
+    keys = row.keys()
     return ServerRow(
         id=row["id"],
         name=row["name"],
@@ -52,8 +55,10 @@ def _row_to_server(row: aiosqlite.Row) -> ServerRow:
         last_error=row["last_error"],
         last_checked=parse_datetime(row["last_checked"]),
         maintenance_mode=bool(row["maintenance_mode"]),
-        position=row["position"] if "position" in row.keys() else 0,
+        position=row["position"] if "position" in keys else 0,
         check_params=json.loads(raw_params) if raw_params else None,
+        last_response_ms=row["last_response_ms"] if "last_response_ms" in keys else None,
+        ssl_expiry_date=row["ssl_expiry_date"] if "ssl_expiry_date" in keys else None,
     )
 
 
@@ -178,8 +183,10 @@ async def update_server_check_result(
     is_up: bool,
     error: Optional[str],
     checked_at: datetime,
+    latency_ms: Optional[int] = None,
+    ssl_expiry_date: Optional[str] = None,
 ) -> None:
-    """Update status, check counts, uptime %, and last_checked after a check."""
+    """Update status, check counts, uptime %, last_checked, latency, and SSL expiry after a check."""
     status = "UP" if is_up else "DOWN"
     await db.execute(
         """UPDATE servers SET
@@ -189,9 +196,12 @@ async def update_server_check_result(
             uptime_percent = ROUND((CAST(successful_checks + ? AS REAL) /
                               (total_checks + 1)) * 100, 2),
             last_error = ?,
-            last_checked = ?
+            last_checked = ?,
+            last_response_ms = COALESCE(?, last_response_ms),
+            ssl_expiry_date = COALESCE(?, ssl_expiry_date)
            WHERE id = ?""",
-        (status, int(is_up), int(is_up), error, checked_at.isoformat(), server_id),
+        (status, int(is_up), int(is_up), error, checked_at.isoformat(),
+         latency_ms, ssl_expiry_date, server_id),
     )
     await db.commit()
 
@@ -201,17 +211,37 @@ async def upsert_daily_stat(
     server_id: int,
     date_str: str,
     is_up: bool,
+    latency_ms: Optional[int] = None,
 ) -> None:
     """Upsert today's daily stats row for the given server."""
     await db.execute(
-        """INSERT INTO server_daily_stats (server_id, date, total_checks, successful_checks, uptime_percent)
-           VALUES (?, ?, 1, ?, ROUND(CAST(? AS REAL) * 100, 2))
+        """INSERT INTO server_daily_stats
+               (server_id, date, total_checks, successful_checks, uptime_percent, avg_response_ms)
+           VALUES (?, ?, 1, ?, ROUND(CAST(? AS REAL) * 100, 2), ?)
            ON CONFLICT(server_id, date) DO UPDATE SET
                total_checks = total_checks + 1,
                successful_checks = successful_checks + excluded.successful_checks,
                uptime_percent = ROUND((CAST(successful_checks + excluded.successful_checks AS REAL) /
-                                (total_checks + 1)) * 100, 2)""",
-        (server_id, date_str, int(is_up), int(is_up)),
+                                (total_checks + 1)) * 100, 2),
+               avg_response_ms = CASE WHEN excluded.avg_response_ms IS NOT NULL
+                   THEN ROUND(
+                       (COALESCE(avg_response_ms, excluded.avg_response_ms) * total_checks
+                        + excluded.avg_response_ms) / (total_checks + 1), 2)
+                   ELSE avg_response_ms END""",
+        (server_id, date_str, int(is_up), int(is_up), latency_ms),
+    )
+    await db.commit()
+
+
+async def update_server_check_params(
+    db: aiosqlite.Connection,
+    server_id: int,
+    check_params: dict,
+) -> None:
+    """Replace the check_params JSON blob for the given server."""
+    await db.execute(
+        "UPDATE servers SET check_params = ? WHERE id = ?",
+        (json.dumps(check_params), server_id),
     )
     await db.commit()
 

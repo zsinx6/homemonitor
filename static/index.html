@@ -465,7 +465,14 @@
       margin: 14px 0 8px;
       border-top: 1px solid var(--border);
       padding-top: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
     }
+    .completed-divider:hover { color: var(--text); }
+    .completed-toggle { font-family: var(--pixel); font-size: 11px; opacity: 0.7; }
 
     /* Add task form */
     #add-task-form { margin-top: 8px; }
@@ -498,7 +505,9 @@
     .memory-icon { font-size: 12px; font-family: var(--pixel); flex-shrink: 0; width: 28px; text-align: center; color: var(--text-muted); }
     .memory-text { flex: 1; color: var(--text); line-height: 1.5; }
     .memory-detail { color: var(--green); font-weight: 500; }
-    .memory-time { font-size: 12px; color: var(--text-muted); flex-shrink: 0; }
+    .memory-time { font-size: 12px; color: var(--text-muted); flex-shrink: 0; text-align: right; line-height: 1.5; }
+    .memory-time-full { display: block; }
+    .memory-time-rel  { display: block; font-size: 11px; opacity: 0.65; }
 
     /* =====================================================================
        MAINTENANCE TAB
@@ -723,6 +732,7 @@
           <option value="http_keyword">HTTP + KEYWORD</option>
           <option value="tcp">TCP PORT</option>
           <option value="ping">PING (ICMP)</option>
+          <option value="public_ip">PUBLIC IP (internet uptime + IP change)</option>
         </select>
       </div>
     </div>
@@ -887,6 +897,7 @@
           <option value="http_keyword">HTTP + KEYWORD</option>
           <option value="tcp">TCP PORT</option>
           <option value="ping">PING (ICMP)</option>
+          <option value="public_ip">PUBLIC IP (internet uptime + IP change)</option>
         </select>
       </div>
     </div>
@@ -973,6 +984,7 @@ const state = {
   prevLevel: null,
   memoriesOffset: 0,
   memoriesTotal: 0,
+  completedVisible: false,
 };
 
 /* =====================================================================
@@ -1202,6 +1214,26 @@ function renderServers(servers) {
     const isMaint   = s.maintenance_mode;
     const uptimePct = s.uptime_percent.toFixed(1);
     const barClass  = uptimeClass(s.uptime_percent);
+    const isPublicIp = s.type === "public_ip";
+
+    // Latency badge
+    let latencyHtml = "";
+    if (s.last_response_ms != null) {
+      const ms = s.last_response_ms;
+      const msColor = ms < 200 ? "var(--green)" : ms < 1000 ? "var(--yellow)" : "var(--red)";
+      latencyHtml = `<span style="font-family:var(--sans);font-size:12px;color:${msColor};margin-left:6px">${ms} ms</span>`;
+    }
+
+    // SSL cert badge (HTTPS servers only)
+    let sslHtml = "";
+    if (s.ssl_days_remaining != null) {
+      const d = s.ssl_days_remaining;
+      const sslColor = d >= 30 ? "var(--green)" : d >= 7 ? "var(--yellow)" : "var(--red)";
+      sslHtml = `<span style="font-family:var(--sans);font-size:12px;color:${sslColor};margin-left:6px" title="SSL cert expires in ${d} days">SSL ${d}d</span>`;
+    }
+
+    // Current public IP (public_ip type only)
+    const currentIp = isPublicIp && s.check_params?.last_ip ? s.check_params.last_ip : null;
 
     // 7-day grid — sort ascending so today is rightmost
     const sorted = [...(s.daily_stats || [])].sort((a, b) => a.date > b.date ? 1 : -1);
@@ -1232,6 +1264,7 @@ function renderServers(servers) {
             onclick="deleteServer(${s.id})">DEL</button>
   </div>
   <div class="server-addr">${escHtml(s.address)}${s.port ? ":"+s.port : ""}</div>
+  ${currentIp ? `<div style="font-family:var(--sans);font-size:13px;color:var(--green);margin-bottom:6px">IP: ${escHtml(currentIp)}</div>` : ""}
   ${isMaint ? '<div style="font-family:var(--sans);font-size:13px;color:var(--yellow);margin-bottom:6px">MAINTENANCE — damage paused</div>' : ""}
   ${isDown && s.last_error ? `<div style="font-family:var(--sans);font-size:13px;color:var(--red);margin-bottom:6px">ERR: ${escHtml(s.last_error)}</div>` : ""}
   <div class="uptime-label">UPTIME ${uptimePct}% &nbsp; (${s.total_checks} checks)</div>
@@ -1240,7 +1273,7 @@ function renderServers(servers) {
   </div>
   <div style="font-family:var(--sans);font-size:13px;color:var(--text-muted);margin-bottom:4px">LAST 7 DAYS</div>
   <div class="uptime-grid">${daySquares || '<div style="font-family:var(--sans);font-size:13px;color:var(--text-muted)">No data yet</div>'}</div>
-  ${s.last_checked ? `<div style="font-family:var(--sans);font-size:12px;color:var(--text-muted)">Last checked: ${new Date(s.last_checked).toLocaleTimeString()}</div>` : ""}
+  ${s.last_checked ? `<div style="font-family:var(--sans);font-size:12px;color:var(--text-muted)">Last checked: ${new Date(s.last_checked).toLocaleTimeString()}${latencyHtml}${sslHtml}</div>` : ""}
 </div>`;
   }).join("");
 }
@@ -1255,6 +1288,7 @@ function renderTasks(data) {
   const pending    = tasks.filter(t => !t.is_completed);
   const completed  = tasks.filter(t => t.is_completed);
   const list       = document.getElementById("task-list");
+  list._lastData   = data; // cache for toggleCompleted()
 
   if (!tasks.length && totalDone === 0) {
     list.innerHTML = '<div style="font-family:var(--sans);font-size:14px;color:var(--text-muted);text-align:center;padding:24px 0">No tasks yet. Add your first sysadmin task below.</div>';
@@ -1280,13 +1314,18 @@ function renderTasks(data) {
   let completedHtml = "";
   if (completed.length) {
     const extra = totalDone > cap ? `<div style="font-family:var(--sans);font-size:13px;color:var(--text-muted);padding:4px 0">...and ${totalDone - completed.length} more completed</div>` : "";
-    completedHtml = `
-<div class="completed-divider">COMPLETED (${totalDone})</div>
+    const icon  = state.completedVisible ? "[-]" : "[+]";
+    const items = state.completedVisible ? `
 ${completed.map(t => `
 <div class="task-item" id="task-${t.id}">
   <input type="checkbox" class="task-checkbox" checked disabled>
   <span class="task-text done">${escHtml(t.task)}</span>
-</div>`).join("")}${extra}`;
+</div>`).join("")}${extra}` : "";
+    completedHtml = `
+<div class="completed-divider" onclick="toggleCompleted()">
+  <span>COMPLETED (${totalDone})</span>
+  <span class="completed-toggle">${icon}</span>
+</div>${items}`;
   }
 
   list.innerHTML = (pendingHtml || (!completed.length ? '<div style="font-family:var(--sans);font-size:14px;color:var(--text-muted);text-align:center;padding:24px 0">No tasks yet. Add your first sysadmin task below.</div>' : "")) + completedHtml;
@@ -1299,25 +1338,37 @@ ${completed.map(t => `
    RENDER MEMORIES (History tab)
 ===================================================================== */
 const MEMORY_META = {
-  server_down:      { icon: "DN", label: "went DOWN" },
-  server_recovery:  { icon: "UP", label: "came back UP" },
-  task_complete:    { icon: "OK", label: "Task done" },
-  backup:           { icon: "BK", label: "Backup ran" },
-  level_up:         { icon: "LV", label: "Level up" },
-  digivolution:     { icon: "EV", label: "Digivolved" },
-  death:            { icon: "XX", label: "Fell in battle" },
-  revival:          { icon: "RV", label: "Revived" },
-  rename:           { icon: "RN", label: "Renamed" },
-  maintenance_on:   { icon: "MN", label: "Maintenance ON" },
-  maintenance_off:  { icon: "MF", label: "Maintenance OFF" },
+  server_down:        { icon: "DN", label: "went DOWN" },
+  server_recovery:    { icon: "UP", label: "came back UP" },
+  task_complete:      { icon: "OK", label: "Task done" },
+  backup:             { icon: "BK", label: "Backup ran" },
+  level_up:           { icon: "LV", label: "Level up" },
+  digivolution:       { icon: "EV", label: "Digivolved" },
+  death:              { icon: "XX", label: "Fell in battle" },
+  revival:            { icon: "RV", label: "Revived" },
+  rename:             { icon: "RN", label: "Renamed" },
+  maintenance_on:     { icon: "MN", label: "Maintenance ON" },
+  maintenance_off:    { icon: "MF", label: "Maintenance OFF" },
+  dust_cleaned:       { icon: "CL", label: "Cleaned dust" },
+  focus_complete:     { icon: "FO", label: "Focus session done" },
+  ssl_expiry_warning: { icon: "SL", label: "SSL cert expiring" },
+  public_ip_changed:  { icon: "IP", label: "Public IP changed" },
 };
 
-function relTime(isoStr) {
-  const diff = Math.floor((Date.now() - new Date(isoStr)) / 1000);
-  if (diff < 60)   return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
-  return `${Math.floor(diff/86400)}d ago`;
+function fmtTime(isoStr) {
+  const d    = new Date(isoStr);
+  const date = d.getFullYear() + '-'
+    + String(d.getMonth() + 1).padStart(2, '0') + '-'
+    + String(d.getDate()).padStart(2, '0');
+  const time = String(d.getHours()).padStart(2, '0') + ':'
+    + String(d.getMinutes()).padStart(2, '0');
+  const diff = Math.floor((Date.now() - d) / 1000);
+  let rel;
+  if (diff < 60)    rel = `${diff}s ago`;
+  else if (diff < 3600)  rel = `${Math.floor(diff/60)}m ago`;
+  else if (diff < 86400) rel = `${Math.floor(diff/3600)}h ago`;
+  else               rel = `${Math.floor(diff/86400)}d ago`;
+  return `<span class="memory-time-full">${date} ${time}</span><span class="memory-time-rel">${rel}</span>`;
 }
 
 const MEMORY_PAGE_SIZE = 25;
@@ -1347,7 +1398,7 @@ function renderMemories(data, append = false) {
     return `<div class="memory-row">
       <span class="memory-icon">${meta.icon}</span>
       <span class="memory-text">${escHtml(meta.label)}${detail}</span>
-      <span class="memory-time">${relTime(m.occurred_at)}</span>
+      <span class="memory-time">${fmtTime(m.occurred_at)}</span>
     </div>`;
   }).join("");
 
@@ -1436,9 +1487,15 @@ async function petInteract(event) {
 // Show/hide type-specific fields (keyword for http_keyword) when type dropdown changes.
 // prefix: "srv" for the add form, "edit-srv" for the edit form.
 function onSrvTypeChange(prefix) {
-  const type = document.getElementById(prefix + "-type").value;
-  const kwRow = document.getElementById(prefix + "-keyword-row");
-  if (kwRow) kwRow.style.display = (type === "http_keyword") ? "" : "none";
+  const type    = document.getElementById(prefix + "-type").value;
+  const kwRow   = document.getElementById(prefix + "-keyword-row");
+  const portRow = document.getElementById(prefix + "-port") && document.getElementById(prefix + "-port").closest(".form-row");
+  const addrEl  = document.getElementById(prefix + "-addr");
+  if (kwRow)   kwRow.style.display   = (type === "http_keyword") ? "" : "none";
+  if (portRow) portRow.style.display = (type === "ping" || type === "public_ip") ? "none" : "";
+  if (type === "public_ip" && addrEl && !addrEl.value.trim()) {
+    addrEl.value = "https://api.ipify.org";
+  }
 }
 
 async function addServer() {
@@ -1546,6 +1603,13 @@ async function addTask() {
   } catch (e) {
     if (e.isValidation) errEl.textContent = e.message;
   }
+}
+
+function toggleCompleted() {
+  state.completedVisible = !state.completedVisible;
+  // Re-render tasks using the last fetched data without a network call
+  const taskList = document.getElementById("task-list");
+  if (taskList._lastData) renderTasks(taskList._lastData);
 }
 
 async function completeTask(id, checkbox) {

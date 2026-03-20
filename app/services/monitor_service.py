@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from app.domain.memory import MemoryType
@@ -14,6 +14,10 @@ from app.infrastructure.checkers.base import ServerChecker
 from app.infrastructure.notifier import NtfyNotifier
 
 logger = logging.getLogger(__name__)
+
+_SSL_WARN_DAYS = 30    # record memory event when cert expires within this many days
+_SSL_NTFY_DAYS = 7     # send ntfy push when cert expires within this many days
+_SSL_WARN_INTERVAL = timedelta(hours=24)  # minimum gap between repeated SSL warnings
 
 
 class MonitorService:
@@ -43,6 +47,8 @@ class MonitorService:
             self._checker_registry.setdefault("http", http_checker)
         if ping_checker is not None:
             self._checker_registry.setdefault("ping", ping_checker)
+        # Per-server SSL warning throttle (server_id → last warned datetime)
+        self._ssl_warned_at: dict[int, datetime] = {}
 
     async def _record(self, db, event_type: str, detail=None) -> None:
         if self._memory_repo:
@@ -68,12 +74,36 @@ class MonitorService:
 
         for result in results:
             await self._server_repo.update_server_check_result(
-                db, result.server_id, result.is_up, result.error, checked_at
+                db, result.server_id, result.is_up, result.error, checked_at,
+                latency_ms=result.latency_ms,
+                ssl_expiry_date=result.ssl_expiry_date,
             )
             await self._server_repo.upsert_daily_stat(
-                db, result.server_id, date_str, result.is_up
+                db, result.server_id, date_str, result.is_up,
+                latency_ms=result.latency_ms,
             )
             current_statuses[result.server_id] = "UP" if result.is_up else "DOWN"
+
+            # Handle public IP change detection
+            if result.detected_ip is not None:
+                server = next((s for s in servers if s.id == result.server_id), None)
+                if server is not None:
+                    params = dict(server.check_params or {})
+                    last_ip = params.get("last_ip")
+                    if last_ip is not None and last_ip != result.detected_ip:
+                        await self._record(
+                            db, MemoryType.PUBLIC_IP_CHANGED,
+                            f"{last_ip} → {result.detected_ip}"
+                        )
+                        if self._notifier:
+                            await self._notifier.notify(
+                                title="🌐 Public IP changed",
+                                message=f"{server.name}: {last_ip} → {result.detected_ip}",
+                                priority="default",
+                                tags=["globe_with_meridians"],
+                            )
+                    params["last_ip"] = result.detected_ip
+                    await self._server_repo.update_server_check_params(db, result.server_id, params)
 
         newly_down_ids, newly_recovered_ids = detect_state_transitions(
             previous_statuses, current_statuses
@@ -140,6 +170,35 @@ class MonitorService:
             event_type, detail = parse_last_event(updated_pet)
             if event_type:
                 await self._record(db, event_type, detail)
+
+        # SSL expiry warnings (throttled to once per 24 h per server)
+        now = datetime.now(timezone.utc)
+        for result in results:
+            if result.ssl_expiry_date is None:
+                continue
+            try:
+                expiry = datetime.fromisoformat(result.ssl_expiry_date)
+                days_left = (expiry - now).days
+            except Exception:
+                continue
+            if days_left > _SSL_WARN_DAYS:
+                continue
+            last_warned = self._ssl_warned_at.get(result.server_id)
+            if last_warned and (now - last_warned) < _SSL_WARN_INTERVAL:
+                continue
+            self._ssl_warned_at[result.server_id] = now
+            server_name = id_to_name.get(result.server_id, f"server {result.server_id}")
+            await self._record(
+                db, MemoryType.SSL_EXPIRY_WARNING,
+                f"{server_name}: {days_left}d remaining"
+            )
+            if self._notifier and days_left <= _SSL_NTFY_DAYS:
+                await self._notifier.notify(
+                    title="⚠️ SSL cert expiring soon",
+                    message=f"{server_name} cert expires in {days_left} day(s).",
+                    priority="high",
+                    tags=["lock", "warning"],
+                )
 
         # Push notifications (fire-and-forget, never block)
         if self._notifier:

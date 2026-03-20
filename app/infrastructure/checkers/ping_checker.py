@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import time
 
 from app.domain import constants as C
 from app.domain.server import ServerCheckResult
@@ -24,6 +25,7 @@ class PingChecker(ServerChecker):
         else:
             cmd = ["ping", "-c", "1", "-W", str(C.PING_TIMEOUT_SECONDS), address]
 
+        t0 = time.perf_counter()
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -31,12 +33,15 @@ class PingChecker(ServerChecker):
                 stderr=asyncio.subprocess.DEVNULL,
             )
             await asyncio.wait_for(proc.communicate(), timeout=C.PING_TIMEOUT_SECONDS + 2)
+            latency_ms = int((time.perf_counter() - t0) * 1000)
             is_up = proc.returncode == 0
             error = None if is_up else "No response to ping"
         except asyncio.TimeoutError:
+            latency_ms = int((time.perf_counter() - t0) * 1000)
             is_up = False
             error = "Ping timed out"
         except Exception as exc:
+            latency_ms = int((time.perf_counter() - t0) * 1000)
             is_up = False
             error = str(exc)[:200]
 
@@ -45,4 +50,5 @@ class PingChecker(ServerChecker):
             name=name,
             is_up=is_up,
             error=error,
+            latency_ms=latency_ms,
         )

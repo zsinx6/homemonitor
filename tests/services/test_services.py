@@ -66,10 +66,13 @@ class MockServerRepo:
     async def list_servers(self, db):
         return self.servers
 
-    async def update_server_check_result(self, db, server_id, is_up, error, checked_at):
+    async def update_server_check_result(self, db, server_id, is_up, error, checked_at, **kwargs):
         self.check_updates.append((server_id, is_up, error))
 
-    async def upsert_daily_stat(self, db, server_id, date_str, is_up):
+    async def upsert_daily_stat(self, db, server_id, date_str, is_up, **kwargs):
+        pass
+
+    async def update_server_check_params(self, db, server_id, params):
         pass
 
 

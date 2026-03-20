@@ -17,7 +17,18 @@ router = APIRouter()
 
 
 async def _server_with_stats(db, srv) -> ServerOut:
+    from datetime import datetime, timezone
     daily = await server_repo.get_daily_stats(db, srv.id, limit=7)
+
+    ssl_expiry: datetime | None = None
+    ssl_days: int | None = None
+    if srv.ssl_expiry_date:
+        try:
+            ssl_expiry = datetime.fromisoformat(srv.ssl_expiry_date)
+            ssl_days = (ssl_expiry - datetime.now(timezone.utc)).days
+        except Exception:
+            pass
+
     return ServerOut(
         id=srv.id,
         name=srv.name,
@@ -33,6 +44,9 @@ async def _server_with_stats(db, srv) -> ServerOut:
         maintenance_mode=srv.maintenance_mode,
         position=srv.position,
         check_params=srv.check_params,
+        last_response_ms=srv.last_response_ms,
+        ssl_expiry_date=ssl_expiry,
+        ssl_days_remaining=ssl_days,
         daily_stats=[
             DailyStatOut(
                 date=d.date,

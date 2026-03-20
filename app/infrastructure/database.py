@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS servers (
     name              TEXT    NOT NULL,
     address           TEXT    NOT NULL,
     port              INTEGER,
-    type              TEXT    NOT NULL CHECK(type IN ('http', 'ping', 'tcp', 'http_keyword')),
+    type              TEXT    NOT NULL CHECK(type IN ('http', 'ping', 'tcp', 'http_keyword', 'public_ip')),
     status            TEXT    NOT NULL DEFAULT 'UP' CHECK(status IN ('UP', 'DOWN')),
     uptime_percent    REAL    NOT NULL DEFAULT 100.0,
     total_checks      INTEGER NOT NULL DEFAULT 0,
@@ -42,7 +42,9 @@ CREATE TABLE IF NOT EXISTS servers (
     last_checked      TEXT,
     maintenance_mode  INTEGER NOT NULL DEFAULT 0,
     position          INTEGER NOT NULL DEFAULT 0,
-    check_params      TEXT
+    check_params      TEXT,
+    last_response_ms  INTEGER,
+    ssl_expiry_date   TEXT
 );
 
 CREATE TABLE IF NOT EXISTS server_daily_stats (
@@ -52,6 +54,7 @@ CREATE TABLE IF NOT EXISTS server_daily_stats (
     total_checks      INTEGER NOT NULL DEFAULT 0,
     successful_checks INTEGER NOT NULL DEFAULT 0,
     uptime_percent    REAL    NOT NULL DEFAULT 0.0,
+    avg_response_ms   REAL,
     UNIQUE(server_id, date)
 );
 
@@ -209,3 +212,78 @@ async def init_db(db: aiosqlite.Connection) -> None:
             logger.debug("Migration done: added column %s to pet_state", col_name)
         except aiosqlite.OperationalError:
             logger.debug("Migration skip: column %s already exists", col_name)
+    # Migration: add latency and SSL columns to servers (nullable — safe ALTER TABLE)
+    _server_v4_migrations = [
+        ("last_response_ms", "ALTER TABLE servers ADD COLUMN last_response_ms INTEGER"),
+        ("ssl_expiry_date",  "ALTER TABLE servers ADD COLUMN ssl_expiry_date TEXT"),
+    ]
+    for col_name, sql in _server_v4_migrations:
+        try:
+            await db.execute(sql)
+            await db.commit()
+            logger.debug("Migration done: added column %s to servers", col_name)
+        except aiosqlite.OperationalError:
+            logger.debug("Migration skip: column %s already exists in servers", col_name)
+    # Migration: add avg_response_ms to server_daily_stats
+    try:
+        await db.execute(
+            "ALTER TABLE server_daily_stats ADD COLUMN avg_response_ms REAL"
+        )
+        await db.commit()
+        logger.debug("Migration done: added avg_response_ms to server_daily_stats")
+    except aiosqlite.OperationalError:
+        logger.debug("Migration skip: avg_response_ms already exists in server_daily_stats")
+    # Migration: rebuild servers table to add public_ip to type CHECK constraint.
+    # Detects by absence of 'public_ip' in the current table DDL.
+    try:
+        async with db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='servers'"
+        ) as cur:
+            row = await cur.fetchone()
+        table_sql = row[0] if row else ""
+        if "'public_ip'" not in table_sql:
+            await db.execute("PRAGMA foreign_keys = OFF")
+            await db.execute("ALTER TABLE servers RENAME TO _servers_v3")
+            await db.execute("""
+                CREATE TABLE servers (
+                    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name              TEXT    NOT NULL,
+                    address           TEXT    NOT NULL,
+                    port              INTEGER,
+                    type              TEXT    NOT NULL
+                                      CHECK(type IN ('http', 'ping', 'tcp', 'http_keyword', 'public_ip')),
+                    status            TEXT    NOT NULL DEFAULT 'UP'
+                                      CHECK(status IN ('UP', 'DOWN')),
+                    uptime_percent    REAL    NOT NULL DEFAULT 100.0,
+                    total_checks      INTEGER NOT NULL DEFAULT 0,
+                    successful_checks INTEGER NOT NULL DEFAULT 0,
+                    last_error        TEXT,
+                    last_checked      TEXT,
+                    maintenance_mode  INTEGER NOT NULL DEFAULT 0,
+                    position          INTEGER NOT NULL DEFAULT 0,
+                    check_params      TEXT,
+                    last_response_ms  INTEGER,
+                    ssl_expiry_date   TEXT
+                )
+            """)
+            await db.execute("""
+                INSERT INTO servers
+                SELECT id, name, address, port, type, status, uptime_percent,
+                       total_checks, successful_checks, last_error, last_checked,
+                       maintenance_mode, position, check_params,
+                       last_response_ms, ssl_expiry_date
+                FROM _servers_v3
+            """)
+            await db.execute("DROP TABLE _servers_v3")
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_servers_status ON servers(status)"
+            )
+            await db.execute("PRAGMA foreign_keys = ON")
+            await db.commit()
+            logger.debug("Migration done: servers table rebuilt with public_ip type + latency/SSL columns")
+    except Exception as exc:
+        logger.warning("Migration (servers rebuild for public_ip) failed: %s", exc)
+        try:
+            await db.execute("PRAGMA foreign_keys = ON")
+        except Exception:
+            pass

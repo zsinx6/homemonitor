@@ -15,6 +15,7 @@ from app.infrastructure.adapters import MemoryRepoAdapter, PetRepoAdapter, Serve
 from app.infrastructure.checkers.http_checker import HttpChecker
 from app.infrastructure.checkers.http_keyword_checker import HttpKeywordChecker
 from app.infrastructure.checkers.ping_checker import PingChecker
+from app.infrastructure.checkers.public_ip_checker import PublicIpChecker
 from app.infrastructure.checkers.tcp_checker import TcpChecker
 from app.infrastructure.config import get_config
 from app.infrastructure.notifier import build_notifier
@@ -35,6 +36,7 @@ def _get_service() -> MonitorService:
             "ping": PingChecker(),
             "tcp": TcpChecker(),
             "http_keyword": HttpKeywordChecker(),
+            "public_ip": PublicIpChecker(),
         }
         _service = MonitorService(
             pet_repo=PetRepoAdapter(),

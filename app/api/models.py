@@ -73,6 +73,7 @@ class DailyStatOut(BaseModel):
     total_checks: int
     successful_checks: int
     uptime_percent: float
+    avg_response_ms: Optional[float] = None
 
 
 class ServerOut(BaseModel):
@@ -91,6 +92,9 @@ class ServerOut(BaseModel):
     maintenance_mode: bool = False
     position: int = 0
     check_params: Optional[dict] = None
+    last_response_ms: Optional[int] = None
+    ssl_expiry_date: Optional[datetime] = None
+    ssl_days_remaining: Optional[int] = None
 
 
 class _ServerBase(BaseModel):
@@ -98,7 +102,7 @@ class _ServerBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     address: str = Field(..., min_length=1, max_length=500)
     port: Optional[int] = Field(None, ge=1, le=65535)
-    type: str = Field(..., pattern="^(http|ping|tcp|http_keyword)$")
+    type: str = Field(..., pattern="^(http|ping|tcp|http_keyword|public_ip)$")
     check_params: Optional[dict[str, Any]] = None
 
     @field_validator("name", "address", mode="before")

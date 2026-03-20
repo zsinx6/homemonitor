@@ -11,6 +11,9 @@ class ServerCheckResult:
     name: str
     is_up: bool
     error: Optional[str]
+    latency_ms: Optional[int] = None
+    ssl_expiry_date: Optional[str] = None  # ISO datetime string for HTTPS cert expiry
+    detected_ip: Optional[str] = None      # current public IP (public_ip checker only)
 
 
 def compute_uptime_percent(total: int, successful: int) -> float:
