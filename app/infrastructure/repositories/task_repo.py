@@ -47,9 +47,8 @@ async def list_tasks(db: aiosqlite.Connection) -> list[TaskRow]:
     pending.sort(key=lambda t: _PRIORITY_ORDER.get(t.priority, 1))
 
     async with db.execute(
-        f"""SELECT * FROM tasks WHERE is_completed = 1
-            ORDER BY completed_at DESC
-            LIMIT {C.COMPLETED_TASKS_DISPLAY_CAP}"""
+        "SELECT * FROM tasks WHERE is_completed = 1 ORDER BY completed_at DESC LIMIT ?",
+        (C.COMPLETED_TASKS_DISPLAY_CAP,),
     ) as cur:
         completed = [_row_to_task(r) for r in await cur.fetchall()]
 

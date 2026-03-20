@@ -53,6 +53,7 @@ async def _server_with_stats(db, srv) -> ServerOut:
                 total_checks=d.total_checks,
                 successful_checks=d.successful_checks,
                 uptime_percent=d.uptime_percent,
+                avg_response_ms=d.avg_response_ms,
             )
             for d in daily
         ],

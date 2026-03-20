@@ -1625,6 +1625,8 @@ async function completeTask(id, checkbox) {
 
   try {
     await api("PUT", `/api/tasks/${id}/complete`);
+    // Invalidate cache so toggleCompleted() won't show stale data during animation
+    document.getElementById("task-list")._lastData = null;
   } catch (_) {
     item.classList.remove("completing");
     checkbox.disabled = false;

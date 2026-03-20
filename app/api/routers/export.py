@@ -257,9 +257,9 @@ async def import_data(
                    SELECT ?, ?, ?
                    WHERE NOT EXISTS (
                        SELECT 1 FROM pet_memories
-                       WHERE occurred_at = ? AND event_type = ?
+                       WHERE occurred_at = ? AND event_type = ? AND COALESCE(detail,'') = COALESCE(?,'')
                    )""",
-                (event_type, detail, occurred_at, occurred_at, event_type),
+                (event_type, detail, occurred_at, occurred_at, event_type, detail),
             )
             imported_memories += 1
         await db.commit()

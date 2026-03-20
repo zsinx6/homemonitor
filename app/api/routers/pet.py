@@ -235,7 +235,7 @@ async def focus_reward(
     if pet.is_dead:
         phrase = await phrase_selector.select(PhraseContext.DEATH, ctx)
     elif on_cooldown:
-        phrase = "You need a break first! Focus cooldown active."
+        phrase = await phrase_selector.select(PhraseContext.BACKUP_COOLDOWN, ctx)
     else:
         phrase = await phrase_selector.select(PhraseContext.BACKUP, ctx)
     return PetFocusResponse(
