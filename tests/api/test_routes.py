@@ -1010,6 +1010,7 @@ class TestTaskValidation:
 
 
 
+class TestInitialName:
     """apply_initial_name_async sets the pet name from config on first start."""
 
     async def test_initial_name_applied_when_default(self):
@@ -1039,3 +1040,188 @@ class TestTaskValidation:
             async with db.execute("SELECT name FROM pet_state WHERE id=1") as cur:
                 row = await cur.fetchone()
             assert row["name"] == "Kraken"  # user rename preserved
+
+
+class TestMigrations:
+    """Tests for database migration helpers and recovery logic."""
+
+    # ── _rebuild_servers atomicity ───────────────────────────────────────────
+
+    async def test_rebuild_servers_succeeds(self):
+        """_rebuild_servers atomically renames, creates, inserts, and drops backup."""
+        import aiosqlite
+        from app.infrastructure.database import init_db, _rebuild_servers
+
+        async with aiosqlite.connect(":memory:") as db:
+            db.row_factory = aiosqlite.Row
+            await init_db(db)
+            await db.execute(
+                "INSERT INTO servers (name, address, type) VALUES ('web', 'http://x', 'http')"
+            )
+            await db.commit()
+
+            new_create = """
+                CREATE TABLE servers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    address TEXT NOT NULL,
+                    port INTEGER,
+                    type TEXT NOT NULL CHECK(type IN ('http','ping','tcp','http_keyword','public_ip')),
+                    status TEXT NOT NULL DEFAULT 'UP',
+                    uptime_percent REAL NOT NULL DEFAULT 100.0,
+                    total_checks INTEGER NOT NULL DEFAULT 0,
+                    successful_checks INTEGER NOT NULL DEFAULT 0,
+                    last_error TEXT, last_checked TEXT,
+                    maintenance_mode INTEGER NOT NULL DEFAULT 0,
+                    position INTEGER NOT NULL DEFAULT 0,
+                    check_params TEXT,
+                    last_response_ms INTEGER,
+                    ssl_expiry_date TEXT
+                )
+            """
+            new_insert = """
+                INSERT INTO servers
+                SELECT id, name, address, port, type, status, uptime_percent,
+                       total_checks, successful_checks, last_error, last_checked,
+                       maintenance_mode, position, check_params,
+                       last_response_ms, ssl_expiry_date
+                FROM _servers_bak
+            """
+            await _rebuild_servers(db, "_servers_bak", new_create, new_insert, "test rebuild")
+
+            # backup table must be gone
+            async with db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='_servers_bak'"
+            ) as cur:
+                assert await cur.fetchone() is None
+
+            # data must be preserved
+            async with db.execute("SELECT name FROM servers") as cur:
+                rows = await cur.fetchall()
+            assert any(r["name"] == "web" for r in rows)
+
+    async def test_rebuild_servers_rollback_on_bad_insert(self):
+        """If the INSERT fails, _rebuild_servers rolls back and servers is intact."""
+        import aiosqlite
+        import pytest
+        from app.infrastructure.database import init_db, _rebuild_servers
+
+        async with aiosqlite.connect(":memory:") as db:
+            db.row_factory = aiosqlite.Row
+            await init_db(db)
+            await db.execute(
+                "INSERT INTO servers (name, address, type) VALUES ('db', 'http://y', 'http')"
+            )
+            await db.commit()
+
+            bad_insert = "INSERT INTO servers SELECT 'intentional_fail' FROM nonexistent_table"
+
+            with pytest.raises(Exception):
+                await _rebuild_servers(
+                    db, "_servers_bak2",
+                    "CREATE TABLE servers (id INTEGER PRIMARY KEY, name TEXT)",
+                    bad_insert,
+                    "should fail",
+                )
+
+            # servers table must still exist with the original data
+            async with db.execute("SELECT name FROM servers WHERE name='db'") as cur:
+                row = await cur.fetchone()
+            assert row is not None, "servers data must survive a failed rebuild"
+
+    # ── Recovery block ────────────────────────────────────────────────────────
+
+    async def test_recovery_restores_from_orphaned_v1_backup(self):
+        """init_db restores data from _servers_v1 when servers is empty (v1 crash scenario)."""
+        import aiosqlite
+        from app.infrastructure.database import init_db
+
+        async with aiosqlite.connect(":memory:") as db:
+            db.row_factory = aiosqlite.Row
+            await init_db(db)
+            await db.execute(
+                "INSERT INTO servers (name, address, type) VALUES ('nginx', 'http://a', 'http')"
+            )
+            await db.execute(
+                "INSERT INTO servers (name, address, type) VALUES ('pihole', 'http://b', 'ping')"
+            )
+            await db.commit()
+
+            # Simulate the crash: rename servers → _servers_v1, create empty servers
+            await db.execute("ALTER TABLE servers RENAME TO _servers_v1")
+            await db.execute("""
+                CREATE TABLE servers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL, address TEXT NOT NULL, port INTEGER,
+                    type TEXT NOT NULL CHECK(type IN ('http','ping','tcp','http_keyword')),
+                    status TEXT NOT NULL DEFAULT 'UP',
+                    uptime_percent REAL NOT NULL DEFAULT 100.0,
+                    total_checks INTEGER NOT NULL DEFAULT 0,
+                    successful_checks INTEGER NOT NULL DEFAULT 0,
+                    last_error TEXT, last_checked TEXT,
+                    maintenance_mode INTEGER NOT NULL DEFAULT 0,
+                    position INTEGER NOT NULL DEFAULT 0, check_params TEXT
+                )
+            """)
+            await db.commit()
+
+            # Restart (re-run init_db)
+            await init_db(db)
+
+            async with db.execute("SELECT name FROM servers ORDER BY id") as cur:
+                names = [r["name"] for r in await cur.fetchall()]
+
+            assert "nginx" in names
+            assert "pihole" in names
+
+            # Backup table must be gone after recovery
+            async with db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='_servers_v1'"
+            ) as cur:
+                assert await cur.fetchone() is None
+
+    async def test_recovery_drops_orphan_when_servers_has_data(self):
+        """If _servers_v1 exists but servers is non-empty, orphan is silently dropped."""
+        import aiosqlite
+        from app.infrastructure.database import init_db
+
+        async with aiosqlite.connect(":memory:") as db:
+            db.row_factory = aiosqlite.Row
+            await init_db(db)
+            await db.execute(
+                "INSERT INTO servers (name, address, type) VALUES ('ok', 'http://c', 'http')"
+            )
+            await db.commit()
+
+            # Simulate a stale orphan from a previously-retried-and-succeeded migration
+            await db.execute("""
+                CREATE TABLE _servers_v1 (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL, address TEXT NOT NULL, port INTEGER,
+                    type TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'UP',
+                    uptime_percent REAL NOT NULL DEFAULT 100.0,
+                    total_checks INTEGER NOT NULL DEFAULT 0,
+                    successful_checks INTEGER NOT NULL DEFAULT 0,
+                    last_error TEXT, last_checked TEXT,
+                    maintenance_mode INTEGER NOT NULL DEFAULT 0,
+                    position INTEGER NOT NULL DEFAULT 0, check_params TEXT
+                )
+            """)
+            await db.execute(
+                "INSERT INTO _servers_v1 (name, address, type) VALUES ('stale', 'http://d', 'http')"
+            )
+            await db.commit()
+
+            await init_db(db)
+
+            # servers should still have 'ok', not replaced by stale data
+            async with db.execute("SELECT name FROM servers") as cur:
+                names = [r["name"] for r in await cur.fetchall()]
+            assert "ok" in names
+            assert "stale" not in names
+
+            # Orphan should be dropped
+            async with db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='_servers_v1'"
+            ) as cur:
+                assert await cur.fetchone() is None
