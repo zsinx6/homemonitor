@@ -11,7 +11,7 @@ from app.api.dependencies import get_db
 from app.api.models import DailyStatOut, MoveServerRequest, ServerCreate, ServerOut, ServerUpdate
 from app.domain.memory import MemoryType
 from app.infrastructure.repositories import memory_repo, server_repo
-from app.worker import get_service, trigger_cycle
+from app.worker import get_service, trigger_cycle, trigger_single_check
 
 router = APIRouter()
 
@@ -77,8 +77,8 @@ async def create_server(
     srv = await server_repo.create_server(
         db, body.name, body.address, body.port, body.type, body.check_params
     )
-    # Fire an immediate check so the new server shows status right away
-    asyncio.create_task(trigger_cycle(request.app.state.db_path))
+    # Check only this new server so existing servers' total_checks are not affected
+    asyncio.create_task(trigger_single_check(request.app.state.db_path, srv.id))
     return await _server_with_stats(db, srv)
 
 

@@ -78,6 +78,25 @@ async def trigger_cycle(db_path: str) -> None:
     await _run_one_cycle(db_path)
 
 
+async def trigger_single_check(db_path: str, server_id: int) -> None:
+    """Run an immediate check for one specific server. Does not affect pet state.
+
+    Used when a new server is created so it gets its initial status without
+    incrementing total_checks on every other server.
+    """
+    try:
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            await asyncio.wait_for(
+                _get_service().check_single(db, server_id),
+                timeout=C.MONITOR_CYCLE_TIMEOUT_SECONDS,
+            )
+    except asyncio.TimeoutError:
+        logger.warning("Single check for server %d timed out", server_id)
+    except Exception:
+        logger.exception("Single check for server %d failed", server_id)
+
+
 def get_service() -> MonitorService:
     """Return the shared MonitorService singleton (creates it if needed)."""
     return _get_service()
