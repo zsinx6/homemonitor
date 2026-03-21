@@ -927,48 +927,52 @@
 const STAGE_FACES = {
   // Bitmon — Fresh (level 1): a tiny data spark
   "fresh": {
-    happy:    "  *\n(ᴗ)\n ‾",
-    lonely:   "  *\n(-)\n ‾",
-    sad:      "  *\n(╥)\n ‾",
-    injured:  "  *\n(×)\n ‾",
-    critical: "  ✕\n(✕)\n !!",
-    dead:     "  ×\n(×)\n ...",
+    happy:    "  *\n(^)\n -",
+    lonely:   "  .\n(-)\n -",
+    sad:      "  .\n(v)\n -",
+    injured:  "  .\n(x)\n -",
+    critical: "  !\n(X)\n !!",
+    dead:     "  .\n(x)\n .",
   },
   // Nibblemon — In-Training (levels 2-4): a nibble-sized sprite
+  // Box: ╔═══╗ = 5 wide; content lines must be exactly 5 chars
   "in-training": {
-    happy:    "  °\n╔═══╗\n║ ᴗ ║\n╚═══╝",
-    lonely:   "  °\n╔═══╗\n║ - ║\n╚═══╝",
-    sad:      "  °\n╔═══╗\n║ ╥ ║\n╚═══╝",
-    injured:  "  ✕\n╔═══╗\n║ × ║\n╚═══╝",
-    critical: "  ✕\n╔═══╗\n║ ✕ ║\n╚═══╝",
-    dead:     "  ×\n╔═══╗\n║ × ║\n╚═══╝",
+    happy:    "  o\n╔═══╗\n║ ^ ║\n╚═══╝",
+    lonely:   "  o\n╔═══╗\n║ - ║\n╚═══╝",
+    sad:      "  o\n╔═══╗\n║ v ║\n╚═══╝",
+    injured:  "  !\n╔═══╗\n║ x ║\n╚═══╝",
+    critical: "  !\n╔═══╗\n║ X ║\n╚═══╝",
+    dead:     "  .\n╔═══╗\n║ x ║\n╚═══╝",
   },
   // Packamon — Rookie (levels 5-14): a compact packet carrier
+  // Box: ╔═════╗ = 7 wide; content lines must be exactly 7 chars
   "rookie": {
-    happy:    "  ▪\n╔═════╗\n║ ◆ ◆ ║\n║  ⚡ ║\n║  ᴗ  ║\n╚═════╝",
-    lonely:   "  ▪\n╔═════╗\n║ ─ ─ ║\n║  ...║\n║  _  ║\n╚═════╝",
-    sad:      "  ▾\n╔═════╗\n║ ╥ ╥ ║\n║  ≈  ║\n║  ︵ ║\n╚═════╝",
-    injured:  "  ▾\n╔═════╗\n║ × × ║\n║  ⚡ ║\n║ _/‾ ║\n╚═════╝",
-    critical: "  ✕\n╔═════╗\n║ ✕ ✕ ║\n║  !!!║\n║  _  ║\n╚═════╝",
-    dead:     "  ×\n╔═════╗\n║ × × ║\n║  —  ║\n║  _  ║\n╚═════╝",
+    happy:    "  *\n╔═════╗\n║ o o ║\n║  ** ║\n║  ^  ║\n╚═════╝",
+    lonely:   "  .\n╔═════╗\n║ - - ║\n║  ...║\n║  _  ║\n╚═════╝",
+    sad:      "  .\n╔═════╗\n║ T T ║\n║ ~~~ ║\n║  v  ║\n╚═════╝",
+    injured:  "  !\n╔═════╗\n║ x x ║\n║  /\\ ║\n║ _/- ║\n╚═════╝",
+    critical: "  !\n╔═════╗\n║ X X ║\n║ !!! ║\n║  _  ║\n╚═════╝",
+    dead:     "  .\n╔═════╗\n║ x x ║\n║  -  ║\n║  _  ║\n╚═════╝",
   },
   // Hostimon — Champion (levels 15-29): a formidable network guardian
+  // Box: ╠══════╣ = 8 wide; content lines must be exactly 8 chars
   "champion": {
-    happy:    "  ▲\n╠══════╣\n║ ◆  ◆ ║\n║  ⚡  ║\n║  ᴗ   ║\n╚══════╝",
-    lonely:   "  △\n╠══════╣\n║ ─  ─ ║\n║  ...  ║\n║  ___  ║\n╚══════╝",
-    sad:      "  ▽\n╠══════╣\n║ ╥  ╥ ║\n║   ≈  ║\n║  ︵  ║\n╚══════╝",
-    injured:  "  ▽\n╠══════╣\n║ ×  × ║\n║  ⚡  ║\n║  _/‾ ║\n╚══════╝",
-    critical: "  ✕\n╠══════╣\n║ ✕  ✕ ║\n║  !!! ║\n║  ___ ║\n╚══════╝",
-    dead:     "  ×\n╠══════╣\n║ ×  × ║\n║  —   ║\n║  ___ ║\n╚══════╝",
+    happy:    "  ^\n╠══════╣\n║ o  o ║\n║  **  ║\n║  ^   ║\n╚══════╝",
+    lonely:   "  .\n╠══════╣\n║ -  - ║\n║ .... ║\n║  ___ ║\n╚══════╝",
+    sad:      "  .\n╠══════╣\n║ T  T ║\n║ ~~~  ║\n║  v   ║\n╚══════╝",
+    injured:  "  !\n╠══════╣\n║ x  x ║\n║  /\\  ║\n║ _/-- ║\n╚══════╝",
+    critical: "  !\n╠══════╣\n║ X  X ║\n║  !!! ║\n║  ___ ║\n╚══════╝",
+    dead:     "  .\n╠══════╣\n║ x  x ║\n║  --- ║\n║  ___ ║\n╚══════╝",
   },
   // Kernelmon — Perfect (level 30+): the ultimate system daemon
+  // Box: ╠══════╣ = 8 wide; content lines must be exactly 8 chars
   "perfect": {
-    happy:    " ╥╥\n╠══════╣\n║⊛    ⊛║\n║  ★   ║\n║  ᴗ   ║\n╚══════╝",
-    lonely:   " ╥╥\n╠══════╣\n║⊛    ⊛║\n║  ...  ║\n║  ___  ║\n╚══════╝",
-    sad:      " ╥▽\n╠══════╣\n║⊛    ⊛║\n║   ≈  ║\n║  ︵  ║\n╚══════╝",
-    injured:  " ╥▽\n╠══════╣\n║×    ×║\n║  ⚡  ║\n║  _/‾ ║\n╚══════╝",
-    critical: " ✕✕\n╠══════╣\n║✕    ✕║\n║  !!!  ║\n║  ___  ║\n╚══════╝",
-    dead:     " ××\n╠══════╣\n║×    ×║\n║  —   ║\n║  ___  ║\n╚══════╝",
+    happy:    " **\n╠══════╣\n║O    O║\n║  *   ║\n║  ^   ║\n╚══════╝",
+    lonely:   " ..\n╠══════╣\n║O    O║\n║ .... ║\n║  ___ ║\n╚══════╝",
+    sad:      " ..\n╠══════╣\n║O    O║\n║ ~~~  ║\n║  v   ║\n╚══════╝",
+    injured:  " .!\n╠══════╣\n║x    x║\n║  /\\  ║\n║  _/- ║\n╚══════╝",
+    critical: " XX\n╠══════╣\n║X    X║\n║  !!! ║\n║  ___ ║\n╚══════╝",
+    dead:     " ..\n╠══════╣\n║x    x║\n║  --  ║\n║  ___ ║\n╚══════╝",
   },
 };
 
