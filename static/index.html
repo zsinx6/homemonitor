@@ -1540,23 +1540,31 @@ async function petInteract(event) {
 
 // Show/hide type-specific fields (keyword for http_keyword) when type dropdown changes.
 // prefix: "srv" for the add form, "edit-srv" for the edit form.
+const PUBLIC_IP_FIXED_NAME = "Public IP";
+
 function onSrvTypeChange(prefix) {
   const type    = document.getElementById(prefix + "-type").value;
   const kwRow   = document.getElementById(prefix + "-keyword-row");
   const portRow = document.getElementById(prefix + "-port") && document.getElementById(prefix + "-port").closest(".form-row");
   const addrEl  = document.getElementById(prefix + "-addr");
+  const nameEl  = document.getElementById(prefix + "-name");
   if (kwRow)   kwRow.style.display   = (type === "http_keyword") ? "" : "none";
   if (portRow) portRow.style.display = (type === "ping" || type === "public_ip") ? "none" : "";
-  if (type === "public_ip" && addrEl && !addrEl.value.trim()) {
-    addrEl.value = "https://api.ipify.org";
+  if (type === "public_ip") {
+    if (addrEl && !addrEl.value.trim()) addrEl.value = "https://api.ipify.org";
+    if (nameEl) { nameEl.value = PUBLIC_IP_FIXED_NAME; nameEl.readOnly = true; nameEl.style.opacity = "0.6"; }
+  } else {
+    if (nameEl) { nameEl.readOnly = false; nameEl.style.opacity = ""; }
   }
 }
 
 async function addServer() {
-  const name = document.getElementById("srv-name").value.trim();
+  const type = document.getElementById("srv-type").value;
+  const name = type === "public_ip"
+    ? PUBLIC_IP_FIXED_NAME
+    : document.getElementById("srv-name").value.trim();
   const addr = document.getElementById("srv-addr").value.trim();
   const port = document.getElementById("srv-port").value;
-  const type = document.getElementById("srv-type").value;
   const keyword = document.getElementById("srv-keyword").value.trim();
   const errEl = document.getElementById("srv-error");
   errEl.textContent = "";
@@ -1633,7 +1641,10 @@ function closeEditServer() {
 
 async function saveServerEdit() {
   const id      = parseInt(document.getElementById("edit-srv-id").value);
-  const name    = document.getElementById("edit-srv-name").value.trim();
+  const type    = document.getElementById("edit-srv-type").value;
+  const name    = type === "public_ip"
+    ? PUBLIC_IP_FIXED_NAME
+    : document.getElementById("edit-srv-name").value.trim();
   const address = document.getElementById("edit-srv-addr").value.trim();
   const portVal = document.getElementById("edit-srv-port").value.trim();
   const type    = document.getElementById("edit-srv-type").value;

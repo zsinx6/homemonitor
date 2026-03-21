@@ -72,6 +72,8 @@ async def create_server(
     request: Request,
     db: aiosqlite.Connection = Depends(get_db),
 ):
+    if body.type == "public_ip":
+        body.name = "Public IP"
     srv = await server_repo.create_server(
         db, body.name, body.address, body.port, body.type, body.check_params
     )
@@ -86,6 +88,8 @@ async def update_server(
     body: ServerUpdate,
     db: aiosqlite.Connection = Depends(get_db),
 ):
+    if body.type == "public_ip":
+        body.name = "Public IP"
     srv = await server_repo.update_server(
         db, server_id, body.name, body.address, body.port, body.type, body.check_params
     )

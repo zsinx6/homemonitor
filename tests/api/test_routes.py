@@ -994,6 +994,25 @@ class TestServerValidation:
         assert kw_srv is not None
         assert kw_srv["check_params"]["keyword"] == "OK"
 
+    async def test_public_ip_create_name_overridden(self, client):
+        """POST /servers with type=public_ip always uses 'Public IP' as name."""
+        r = await client.post("/api/servers", json={
+            "name": "My Custom Name", "address": "https://api.ipify.org", "type": "public_ip"
+        })
+        assert r.status_code == 201
+        assert r.json()["name"] == "Public IP"
+
+    async def test_public_ip_update_name_overridden(self, client):
+        """PUT /servers/{id} with type=public_ip always uses 'Public IP' as name."""
+        created = (await client.post("/api/servers", json={
+            "name": "temp", "address": "https://api.ipify.org", "type": "public_ip"
+        })).json()
+        r = await client.put(f"/api/servers/{created['id']}", json={
+            "name": "Custom Override Attempt", "address": "https://api.ipify.org", "type": "public_ip"
+        })
+        assert r.status_code == 200
+        assert r.json()["name"] == "Public IP"
+
 
 class TestTaskValidation:
     """Additional task input validation edge cases."""
