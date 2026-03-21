@@ -18,6 +18,7 @@ class PetRepoAdapter:
 
 class ServerRepoAdapter:
     async def list_servers(self, db): return await server_repo.list_servers(db)
+    async def get_server(self, db, sid): return await server_repo.get_server(db, sid)
     async def update_server_check_result(self, db, *a, **kw): await server_repo.update_server_check_result(db, *a, **kw)
     async def upsert_daily_stat(self, db, *a, **kw): await server_repo.upsert_daily_stat(db, *a, **kw)
     async def update_server_check_params(self, db, sid, params): await server_repo.update_server_check_params(db, sid, params)
