@@ -1244,3 +1244,206 @@ class TestMigrations:
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='_servers_v1'"
             ) as cur:
                 assert await cur.fetchone() is None
+
+    async def test_recovery_restores_from_orphaned_v3_backup(self):
+        """init_db restores data from _servers_v3 orphan (same as v1 but for v3 migration)."""
+        import aiosqlite
+        from app.infrastructure.database import init_db
+
+        async with aiosqlite.connect(":memory:") as db:
+            db.row_factory = aiosqlite.Row
+            await init_db(db)
+            await db.execute(
+                "INSERT INTO servers (name, address, type) VALUES ('alpha', 'http://a', 'http')"
+            )
+            await db.commit()
+
+            # Simulate a crash mid-v3 migration: _servers_v3 has data, servers is empty
+            await db.execute("ALTER TABLE servers RENAME TO _servers_v3")
+            await db.execute("""
+                CREATE TABLE servers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL, address TEXT NOT NULL, port INTEGER,
+                    type TEXT NOT NULL CHECK(type IN ('http','ping','tcp','http_keyword')),
+                    status TEXT NOT NULL DEFAULT 'UP',
+                    uptime_percent REAL NOT NULL DEFAULT 100.0,
+                    total_checks INTEGER NOT NULL DEFAULT 0,
+                    successful_checks INTEGER NOT NULL DEFAULT 0,
+                    last_error TEXT, last_checked TEXT,
+                    maintenance_mode INTEGER NOT NULL DEFAULT 0,
+                    position INTEGER NOT NULL DEFAULT 0, check_params TEXT
+                )
+            """)
+            await db.commit()
+
+            await init_db(db)
+
+            async with db.execute("SELECT name FROM servers") as cur:
+                names = [r["name"] for r in await cur.fetchall()]
+            assert "alpha" in names
+
+            async with db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='_servers_v3'"
+            ) as cur:
+                assert await cur.fetchone() is None
+
+    async def test_recovery_both_v1_and_v3_orphans_v1_takes_priority(self):
+        """When both _servers_v1 and _servers_v3 exist: v1 data restored, v3 orphan dropped."""
+        import aiosqlite
+        from app.infrastructure.database import init_db
+
+        # Full schema matching the backup tables (no check_params, no latency, no ssl_expiry)
+        _backup_schema = """
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL, address TEXT NOT NULL, port INTEGER,
+            type TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'UP',
+            uptime_percent REAL NOT NULL DEFAULT 100.0,
+            total_checks INTEGER NOT NULL DEFAULT 0,
+            successful_checks INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT, last_checked TEXT,
+            maintenance_mode INTEGER NOT NULL DEFAULT 0,
+            position INTEGER NOT NULL DEFAULT 0, check_params TEXT
+        """
+
+        async with aiosqlite.connect(":memory:") as db:
+            db.row_factory = aiosqlite.Row
+            await init_db(db)
+
+            # Manually create both orphan tables (simulating two successive failed migrations)
+            await db.execute(f"CREATE TABLE _servers_v1 ({_backup_schema})")
+            await db.execute(
+                "INSERT INTO _servers_v1 (name, address, type) VALUES ('v1-data', 'http://v1', 'http')"
+            )
+            await db.execute(f"CREATE TABLE _servers_v3 ({_backup_schema})")
+            await db.execute(
+                "INSERT INTO _servers_v3 (name, address, type) VALUES ('v3-data', 'http://v3', 'http')"
+            )
+            # Empty the live servers table
+            await db.execute("DELETE FROM servers")
+            await db.commit()
+
+            await init_db(db)
+
+            async with db.execute("SELECT name FROM servers") as cur:
+                names = [r["name"] for r in await cur.fetchall()]
+
+            # v1 is processed first in the loop and restores data
+            assert "v1-data" in names
+
+            # Both orphan tables must be cleaned up
+            for tbl in ("_servers_v1", "_servers_v3"):
+                async with db.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (tbl,)
+                ) as cur:
+                    assert await cur.fetchone() is None, f"{tbl} should be gone"
+
+
+class TestExportImportEdgeCases:
+    """Export/import robustness: missing optional fields and idempotency."""
+
+    async def test_import_missing_memories_key_does_not_crash(self, client):
+        """Payload without 'memories' key imports successfully (defaults to [])."""
+        r = await client.post("/api/import", json={
+            "servers": [{"name": "s", "address": "http://s", "type": "http"}],
+            "tasks": [],
+            # no 'memories' key at all
+        })
+        assert r.status_code == 200
+
+    async def test_import_server_without_daily_stats_key_does_not_crash(self, client):
+        """Server in import payload without 'daily_stats' key imports successfully."""
+        r = await client.post("/api/import", json={
+            "servers": [{"name": "nodaily", "address": "http://nd", "type": "http"}],
+            "tasks": [],
+        })
+        assert r.status_code == 200
+        servers = (await client.get("/api/servers")).json()
+        assert any(s["name"] == "nodaily" for s in servers)
+
+    async def test_import_twice_memories_not_duplicated(self, client):
+        """Importing the same export twice must not create duplicate memory entries."""
+        # Seed a memory by running a backup (generates a memory event)
+        await client.post("/api/pet/backup")
+        export1 = (await client.get("/api/export")).json()
+        initial_memories = len(export1.get("memories", []))
+
+        # First import
+        await client.post("/api/import", json=export1)
+        # Second import of the exact same payload
+        await client.post("/api/import", json=export1)
+
+        memories_after = (await client.get("/api/export")).json().get("memories", [])
+        assert len(memories_after) == initial_memories
+
+
+class TestServerTypeSwitch:
+    """Type changes between public_ip and other types: name override rules."""
+
+    async def test_change_from_public_ip_to_http_allows_custom_name(self, client):
+        """PUT changing type public_ip → http lets the name be freely edited."""
+        created = (await client.post("/api/servers", json={
+            "name": "ignored", "address": "https://api.ipify.org", "type": "public_ip"
+        })).json()
+        assert created["name"] == "Public IP"
+
+        r = await client.put(f"/api/servers/{created['id']}", json={
+            "name": "MyCustomServer", "address": "http://localhost", "type": "http"
+        })
+        assert r.status_code == 200
+        assert r.json()["name"] == "MyCustomServer"
+
+    async def test_change_from_http_to_public_ip_overrides_name(self, client):
+        """PUT changing type http → public_ip forces name to 'Public IP'."""
+        created = (await client.post("/api/servers", json={
+            "name": "my-server", "address": "http://localhost", "type": "http"
+        })).json()
+
+        r = await client.put(f"/api/servers/{created['id']}", json={
+            "name": "my-server", "address": "https://api.ipify.org", "type": "public_ip"
+        })
+        assert r.status_code == 200
+        assert r.json()["name"] == "Public IP"
+
+    async def test_maintenance_toggle_preserves_public_ip_name(self, client):
+        """PATCH /maintenance on a public_ip server does not change its name."""
+        created = (await client.post("/api/servers", json={
+            "name": "ignored", "address": "https://api.ipify.org", "type": "public_ip"
+        })).json()
+        assert created["name"] == "Public IP"
+
+        await client.patch(f"/api/servers/{created['id']}/maintenance")
+        servers = (await client.get("/api/servers")).json()
+        srv = next(s for s in servers if s["id"] == created["id"])
+        assert srv["name"] == "Public IP"
+
+
+class TestServerPortValidation:
+    """Port and name length boundary validation."""
+
+    async def test_create_server_port_zero_rejected(self, client):
+        """Port 0 is outside valid range 1-65535 → 422."""
+        r = await client.post("/api/servers", json={
+            "name": "bad", "address": "192.168.1.1", "port": 0, "type": "ping"
+        })
+        assert r.status_code == 422
+
+    async def test_create_server_port_65536_rejected(self, client):
+        """Port 65536 exceeds max → 422."""
+        r = await client.post("/api/servers", json={
+            "name": "bad", "address": "192.168.1.1", "port": 65536, "type": "ping"
+        })
+        assert r.status_code == 422
+
+    async def test_create_server_name_exactly_100_chars_accepted(self, client):
+        """Name at the max boundary (100 chars) is accepted."""
+        r = await client.post("/api/servers", json={
+            "name": "x" * 100, "address": "http://localhost", "type": "http"
+        })
+        assert r.status_code == 201
+
+    async def test_create_server_name_101_chars_rejected(self, client):
+        """Name one character over the max is rejected → 422."""
+        r = await client.post("/api/servers", json={
+            "name": "x" * 101, "address": "http://localhost", "type": "http"
+        })
+        assert r.status_code == 422

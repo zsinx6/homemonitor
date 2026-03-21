@@ -969,3 +969,135 @@ class TestHttpCheckerCheckParams:
             result = await checker.check(1, "site", "http://example.com", None,
                                          check_params={"expected_status": [200, 201]})
         assert not result.is_up
+
+
+# ─── check_single edge cases ────────────────────────────────────────────────
+
+class TestCheckSingleEdgeCases:
+    """Additional check_single scenarios: exception handling and maintenance mode."""
+
+    def _make_service_with_raising_checker(self, servers, exc):
+        pet_repo = MockPetRepo(pet=_default_pet())
+        srv_repo = MockServerRepo(servers=servers)
+        checker = AsyncMock(return_value=None)
+
+        async def raising_check(server_id, name, address, port, check_params=None):
+            raise exc
+
+        checker.check = raising_check
+        service = MonitorService(
+            pet_repo=pet_repo,
+            server_repo=srv_repo,
+            http_checker=checker,
+            ping_checker=checker,
+        )
+        return service, pet_repo, srv_repo
+
+    async def test_checker_exception_marks_server_down(self):
+        """If checker raises, check_single records DOWN; no unhandled error."""
+        server = FakeServer(id=5, name="flaky", address="http://flaky", port=None, type="http")
+        service, _, srv_repo = self._make_service_with_raising_checker(
+            [server], RuntimeError("network unreachable")
+        )
+        await service.check_single(db=None, server_id=5)
+        assert len(srv_repo.check_updates) == 1
+        _, is_up, _ = srv_repo.check_updates[0]
+        assert is_up is False
+
+    async def test_checker_exception_pet_unchanged(self):
+        """Checker exception must not modify pet HP or EXP."""
+        server = FakeServer(id=6, name="ghost", address="http://ghost", port=None, type="http")
+        service, pet_repo, _ = self._make_service_with_raising_checker(
+            [server], ConnectionError("refused")
+        )
+        hp_before, exp_before = pet_repo.pet.hp, pet_repo.pet.exp
+        await service.check_single(db=None, server_id=6)
+        assert pet_repo.pet.hp == hp_before
+        assert pet_repo.pet.exp == exp_before
+
+    async def test_maintenance_server_check_single_pet_unchanged(self):
+        """check_single on a maintenance_mode server never modifies pet state."""
+        server = FakeServer(id=7, name="maint", address="http://m", port=None,
+                            type="http", status="UP", maintenance_mode=True)
+        result = ServerCheckResult(server_id=7, name="maint", is_up=False, error="down")
+        pet_repo = MockPetRepo(pet=_default_pet())
+        srv_repo = MockServerRepo(servers=[server])
+        checker = AsyncMock(return_value=None)
+
+        async def mock_check(server_id, name, address, port, check_params=None):
+            return result
+
+        checker.check = mock_check
+        service = MonitorService(
+            pet_repo=pet_repo,
+            server_repo=srv_repo,
+            http_checker=checker,
+            ping_checker=checker,
+        )
+        hp_before = pet_repo.pet.hp
+        await service.check_single(db=None, server_id=7)
+        assert pet_repo.pet.hp == hp_before
+
+
+# ─── Daily stats ON CONFLICT SQL math ───────────────────────────────────────
+
+class TestDailyStatUpsert:
+    """Verify upsert_daily_stat ON CONFLICT accumulation using a real in-memory DB."""
+
+    async def _fresh_db(self):
+        import aiosqlite
+        from app.infrastructure.database import init_db
+        conn = aiosqlite.connect(":memory:")
+        db = await conn.__aenter__()
+        db.row_factory = aiosqlite.Row
+        await init_db(db)
+        return conn, db
+
+    async def test_accumulates_total_and_successful_checks(self):
+        """Three upserts on same (server_id, date): total=3, successful=2."""
+        from app.infrastructure.repositories.server_repo import (
+            upsert_daily_stat, get_daily_stats, create_server,
+        )
+        conn, db = await self._fresh_db()
+        try:
+            srv = await create_server(db, "web", "http://x", None, "http", None)
+            today = "2025-01-15"
+            await upsert_daily_stat(db, srv.id, today, True,  latency_ms=10)
+            await upsert_daily_stat(db, srv.id, today, True,  latency_ms=20)
+            await upsert_daily_stat(db, srv.id, today, False, latency_ms=None)
+            stats = await get_daily_stats(db, srv.id, limit=7)
+            assert len(stats) == 1
+            assert stats[0].total_checks == 3
+            assert stats[0].successful_checks == 2
+            assert abs(stats[0].uptime_percent - 66.67) < 0.5
+        finally:
+            await conn.__aexit__(None, None, None)
+
+    async def test_avg_response_ms_rolling_average(self):
+        """avg_response_ms is the rolling average of non-null latency values."""
+        from app.infrastructure.repositories.server_repo import (
+            upsert_daily_stat, get_daily_stats, create_server,
+        )
+        conn, db = await self._fresh_db()
+        try:
+            srv = await create_server(db, "api", "http://api", None, "http", None)
+            today = "2025-01-15"
+            await upsert_daily_stat(db, srv.id, today, True, latency_ms=100)
+            await upsert_daily_stat(db, srv.id, today, True, latency_ms=200)
+            stats = await get_daily_stats(db, srv.id, limit=7)
+            assert stats[0].avg_response_ms is not None
+            assert abs(stats[0].avg_response_ms - 150) < 1
+        finally:
+            await conn.__aexit__(None, None, None)
+
+    async def test_get_daily_stats_empty_returns_empty_list(self):
+        """No stat rows for a server returns an empty list."""
+        from app.infrastructure.repositories.server_repo import (
+            get_daily_stats, create_server,
+        )
+        conn, db = await self._fresh_db()
+        try:
+            srv = await create_server(db, "empty", "http://e", None, "http", None)
+            assert await get_daily_stats(db, srv.id, limit=7) == []
+        finally:
+            await conn.__aexit__(None, None, None)
