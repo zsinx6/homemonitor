@@ -103,9 +103,68 @@ async def apply_initial_name_async(db: aiosqlite.Connection, initial_name: str |
     await db.commit()
 
 
+async def _rebuild_servers(
+    db: aiosqlite.Connection,
+    backup_name: str,
+    create_sql: str,
+    insert_sql: str,
+    log_msg: str,
+) -> None:
+    """Atomically rebuild the servers table.
+
+    Uses an explicit BEGIN EXCLUSIVE so that RENAME + CREATE TABLE + INSERT + DROP
+    are all inside one SQLite transaction.  On any failure the whole transaction
+    is rolled back, leaving the original 'servers' table untouched.
+    """
+    await db.execute("PRAGMA foreign_keys = OFF")
+    try:
+        await db.execute("BEGIN EXCLUSIVE")
+        await db.execute(f"ALTER TABLE servers RENAME TO {backup_name}")
+        await db.execute(create_sql)
+        await db.execute(insert_sql)
+        await db.execute(f"DROP TABLE {backup_name}")
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_servers_status ON servers(status)"
+        )
+        await db.execute("COMMIT")
+        logger.debug("Migration done: %s", log_msg)
+    except Exception:
+        try:
+            await db.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
+    finally:
+        await db.execute("PRAGMA foreign_keys = ON")
+
+
 async def init_db(db: aiosqlite.Connection) -> None:
     """Create schema and seed the default pet row (idempotent)."""
     await db.executescript(_SCHEMA_SQL)
+
+    # --- Recovery: restore data from orphaned backup tables left by a failed rebuild ---
+    # If a previous migration renamed 'servers' → '_servers_vN' but then crashed
+    # before the DROP, the real data is in the backup and 'servers' may be empty.
+    for backup in ("_servers_v1", "_servers_v3"):
+        async with db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (backup,)
+        ) as cur:
+            found = await cur.fetchone()
+        if found is None:
+            continue
+        async with db.execute("SELECT COUNT(*) FROM servers") as cur:
+            count = (await cur.fetchone())[0]
+        if count == 0:
+            logger.warning(
+                "Recovering servers data from orphaned backup table %s", backup
+            )
+            await db.execute("DROP TABLE servers")
+            await db.execute(f"ALTER TABLE {backup} RENAME TO servers")
+        else:
+            logger.warning("Dropping orphaned backup table %s (servers is non-empty)", backup)
+            await db.execute(f"DROP TABLE {backup}")
+        await db.commit()
+
     # Migration: add is_dead column to existing databases that pre-date it
     try:
         await db.execute(
@@ -146,7 +205,7 @@ async def init_db(db: aiosqlite.Connection) -> None:
     except aiosqlite.OperationalError:
         logger.debug("Migration skip: priority column already exists")
     # Migration: rebuild servers table to support new check types and add check_params column.
-    # We detect the old schema by checking its DDL for the restricted type CHECK constraint.
+    # Detected by absence of check_params in the DDL (the column this migration adds).
     try:
         async with db.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='servers'"
@@ -154,10 +213,7 @@ async def init_db(db: aiosqlite.Connection) -> None:
             row = await cur.fetchone()
         table_sql = row[0] if row else ""
         if "check_params" not in table_sql:
-            # Disable FK enforcement during table rebuild to avoid constraint errors
-            await db.execute("PRAGMA foreign_keys = OFF")
-            await db.execute("ALTER TABLE servers RENAME TO _servers_v1")
-            await db.execute("""
+            await _rebuild_servers(db, "_servers_v1", """
                 CREATE TABLE servers (
                     id                INTEGER PRIMARY KEY AUTOINCREMENT,
                     name              TEXT    NOT NULL,
@@ -176,27 +232,15 @@ async def init_db(db: aiosqlite.Connection) -> None:
                     position          INTEGER NOT NULL DEFAULT 0,
                     check_params      TEXT
                 )
-            """)
-            await db.execute("""
+            """, """
                 INSERT INTO servers
                 SELECT id, name, address, port, type, status, uptime_percent,
                        total_checks, successful_checks, last_error, last_checked,
                        maintenance_mode, position, NULL
                 FROM _servers_v1
-            """)
-            await db.execute("DROP TABLE _servers_v1")
-            await db.execute(
-                "CREATE INDEX IF NOT EXISTS idx_servers_status ON servers(status)"
-            )
-            await db.execute("PRAGMA foreign_keys = ON")
-            await db.commit()
-            logger.debug("Migration done: servers table rebuilt with new check types + check_params")
+            """, "servers table rebuilt with new check types + check_params")
     except Exception as exc:
         logger.warning("Migration (servers rebuild) failed: %s", exc)
-        try:
-            await db.execute("PRAGMA foreign_keys = ON")
-        except Exception:
-            pass
     # Migration: add V3 dust/mood/focus columns to pet_state (each in its own guard)
     _v3_migrations = [
         ("dust_count",     "ALTER TABLE pet_state ADD COLUMN dust_count INTEGER NOT NULL DEFAULT 0"),
@@ -242,9 +286,7 @@ async def init_db(db: aiosqlite.Connection) -> None:
             row = await cur.fetchone()
         table_sql = row[0] if row else ""
         if "'public_ip'" not in table_sql:
-            await db.execute("PRAGMA foreign_keys = OFF")
-            await db.execute("ALTER TABLE servers RENAME TO _servers_v3")
-            await db.execute("""
+            await _rebuild_servers(db, "_servers_v3", """
                 CREATE TABLE servers (
                     id                INTEGER PRIMARY KEY AUTOINCREMENT,
                     name              TEXT    NOT NULL,
@@ -265,25 +307,13 @@ async def init_db(db: aiosqlite.Connection) -> None:
                     last_response_ms  INTEGER,
                     ssl_expiry_date   TEXT
                 )
-            """)
-            await db.execute("""
+            """, """
                 INSERT INTO servers
                 SELECT id, name, address, port, type, status, uptime_percent,
                        total_checks, successful_checks, last_error, last_checked,
                        maintenance_mode, position, check_params,
                        last_response_ms, ssl_expiry_date
                 FROM _servers_v3
-            """)
-            await db.execute("DROP TABLE _servers_v3")
-            await db.execute(
-                "CREATE INDEX IF NOT EXISTS idx_servers_status ON servers(status)"
-            )
-            await db.execute("PRAGMA foreign_keys = ON")
-            await db.commit()
-            logger.debug("Migration done: servers table rebuilt with public_ip type + latency/SSL columns")
+            """, "servers table rebuilt with public_ip type + latency/SSL columns")
     except Exception as exc:
         logger.warning("Migration (servers rebuild for public_ip) failed: %s", exc)
-        try:
-            await db.execute("PRAGMA foreign_keys = ON")
-        except Exception:
-            pass
