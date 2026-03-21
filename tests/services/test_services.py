@@ -66,6 +66,9 @@ class MockServerRepo:
     async def list_servers(self, db):
         return self.servers
 
+    async def get_server(self, db, server_id):
+        return next((s for s in self.servers if s.id == server_id), None)
+
     async def update_server_check_result(self, db, server_id, is_up, error, checked_at, **kwargs):
         self.check_updates.append((server_id, is_up, error))
 
@@ -228,6 +231,32 @@ class TestMonitorService:
         await service.run_cycle(db=None)
         assert pet_repo.pet.last_event is not None
         assert pet_repo.pet.last_event.startswith("server_down:")
+
+    async def test_check_single_updates_check_result(self):
+        """check_single() persists check result for the target server."""
+        server = FakeServer(id=3, name="solo", address="http://solo", port=None, type="http")
+        result = ServerCheckResult(server_id=3, name="solo", is_up=True, error=None, latency_ms=42)
+        service, _, server_repo = self._make_service([server], [result])
+        await service.check_single(db=None, server_id=3)
+        assert len(server_repo.check_updates) == 1
+        sid, is_up, _ = server_repo.check_updates[0]
+        assert sid == 3
+        assert is_up is True
+
+    async def test_check_single_unknown_server_is_noop(self):
+        """check_single() with an unknown server_id does nothing."""
+        service, _, server_repo = self._make_service([], [])
+        await service.check_single(db=None, server_id=999)
+        assert server_repo.check_updates == []
+
+    async def test_check_single_does_not_affect_pet_hp(self):
+        """check_single() never modifies pet state even when server is down."""
+        server = FakeServer(id=4, name="db", address="http://db", port=None, type="http")
+        result = ServerCheckResult(server_id=4, name="db", is_up=False, error="timeout")
+        service, pet_repo, _ = self._make_service([server], [result])
+        hp_before = pet_repo.pet.hp
+        await service.check_single(db=None, server_id=4)
+        assert pet_repo.pet.hp == hp_before  # pet untouched
 
 
 # ---------------------------------------------------------------------------

@@ -860,6 +860,45 @@ class TestExportImport:
         assert "version" in data
 
 
+class TestForceCheck:
+    """POST /api/servers/{id}/check — force immediate re-check."""
+
+    async def test_force_check_returns_server(self, client):
+        """Force check returns the updated ServerOut for the target server."""
+        create = await client.post("/api/servers", json={
+            "name": "web", "address": "http://localhost", "type": "http"
+        })
+        assert create.status_code == 201
+        server_id = create.json()["id"]
+
+        r = await client.post(f"/api/servers/{server_id}/check")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["id"] == server_id
+        assert data["name"] == "web"
+        assert "last_checked" in data
+        assert "daily_stats" in data
+
+    async def test_force_check_unknown_server_returns_404(self, client):
+        r = await client.post("/api/servers/9999/check")
+        assert r.status_code == 404
+
+    async def test_force_check_increments_total_checks(self, client):
+        """Each force check should count toward total_checks."""
+        create = await client.post("/api/servers", json={
+            "name": "ping-host", "address": "192.168.1.1", "type": "ping"
+        })
+        server_id = create.json()["id"]
+        # Snapshot BEFORE — background cycle from create may have already run
+        before_resp = await client.get("/api/servers")
+        before = next(s for s in before_resp.json() if s["id"] == server_id)["total_checks"]
+
+        await client.post(f"/api/servers/{server_id}/check")
+        after_resp = await client.get("/api/servers")
+        srv = next(s for s in after_resp.json() if s["id"] == server_id)
+        assert srv["total_checks"] >= before + 1
+
+
 class TestServerValidation:
     """Additional server input validation edge cases."""
 
