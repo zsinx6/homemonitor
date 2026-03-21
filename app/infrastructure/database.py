@@ -153,7 +153,7 @@ async def init_db(db: aiosqlite.Connection) -> None:
         ) as cur:
             row = await cur.fetchone()
         table_sql = row[0] if row else ""
-        if "'http', 'ping'" in table_sql:
+        if "check_params" not in table_sql:
             # Disable FK enforcement during table rebuild to avoid constraint errors
             await db.execute("PRAGMA foreign_keys = OFF")
             await db.execute("ALTER TABLE servers RENAME TO _servers_v1")
