@@ -11,6 +11,7 @@ Usage::
 """
 from __future__ import annotations
 
+import json
 import logging
 from typing import Optional
 
@@ -44,17 +45,26 @@ class NtfyNotifier:
         priority: str = PRIORITY_DEFAULT,
         tags: Optional[list[str]] = None,
     ) -> None:
-        """POST a notification to the ntfy topic. Never raises."""
-        headers: dict[str, str] = {
-            "Title": title,
-            "Priority": priority,
+        """POST a notification to the ntfy topic. Never raises.
+
+        Uses the JSON body API so that emoji/Unicode in title and message are
+        transmitted as UTF-8 without hitting HTTP header ASCII restrictions.
+        """
+        payload: dict = {
+            "title":    title,
+            "message":  message,
+            "priority": priority,
         }
         if tags:
-            headers["Tags"] = ",".join(tags)
+            payload["tags"] = tags
 
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.post(self._url, content=message.encode(), headers=headers)
+                resp = await client.post(
+                    self._url,
+                    content=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
                 resp.raise_for_status()
         except Exception as exc:
             logger.warning("ntfy notification failed (%s): %s", self._url, exc)
