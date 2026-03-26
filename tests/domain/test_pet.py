@@ -457,6 +457,13 @@ class TestApplyRevive:
         result = apply_revive(pet)
         assert result.is_dead is False
 
+    def test_revive_clears_dust_count(self):
+        """Revival must clear dust so the pet doesn't immediately resume taking dust-drain damage."""
+        from app.domain.pet import apply_revive
+        pet = _pet(is_dead=True, hp=0, dust_count=C.MAX_DUST)
+        result = apply_revive(pet)
+        assert result.dust_count == 0
+
 
 # ---------------------------------------------------------------------------
 # Scaled server damage

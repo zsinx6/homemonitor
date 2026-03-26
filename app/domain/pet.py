@@ -183,17 +183,19 @@ def apply_backup(pet: Pet) -> Pet:
 
 
 def apply_revive(pet: Pet) -> Pet:
-    """Revive a dead pet: restore HP, reset EXP, clear death flag.
+    """Revive a dead pet: restore HP, reset EXP, clear death flag and dust.
 
     Keeps level as-is so progression isn't fully wiped, but EXP resets to 0
     as a meaningful penalty. HP is restored to HP_REVIVE (not full) so the
-    player still needs to care for the pet after revival.
+    player still needs to care for the pet after revival. Dust is cleared so
+    the pet doesn't immediately resume taking dust-drain damage after revival.
     """
     return replace(
         pet,
         hp=C.HP_REVIVE,
         exp=0,
         is_dead=False,
+        dust_count=0,
         last_event="revival",
         last_updated=_now(),
     )
