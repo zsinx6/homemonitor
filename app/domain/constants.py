@@ -18,7 +18,7 @@ HP_DRAIN_BACKUP_OVERDUE = 1     # per cycle when backup is >30 days overdue
 # HP bounds
 HP_MAX = 10
 HP_MIN = 0
-HP_REVIVE = 5                   # HP restored on revival from death
+HP_REVIVE = 7                   # HP restored on revival — matches HP_HAPPY_THRESHOLD so the pet isn't permanently sad after revival
 
 # EXP bounds
 EXP_MIN = 0

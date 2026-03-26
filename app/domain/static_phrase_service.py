@@ -25,10 +25,10 @@ _PHRASES: dict[PhraseContext, list[str]] = {
         "My uptime is perfect. My loneliness, less so.",
     ],
     PhraseContext.SAD: [
-        "Something's wrong. I can feel it in the packets.",
-        "I sense a disturbance in the LAN...",
-        "Not all systems are nominal. I am worried.",
-        "My health is suffering. Please help.",
+        "My vitals are low. I need attention.",
+        "Systems below optimal. Something feels off.",
+        "I'm not at my best right now. Please help.",
+        "Health degrading. Operator intervention recommended.",
     ],
     PhraseContext.INJURED: [
         "I've taken too much damage. Systems critical.",
