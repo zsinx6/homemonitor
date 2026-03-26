@@ -464,6 +464,28 @@ class TestApplyRevive:
         result = apply_revive(pet)
         assert result.dust_count == 0
 
+    def test_revive_resets_last_interaction_date(self):
+        """Revival must reset last_interaction_date so the pet isn't immediately lonely-drained."""
+        from app.domain.pet import apply_revive
+        from datetime import datetime, timezone, timedelta
+        old = datetime.now(timezone.utc) - timedelta(hours=48)
+        pet = _pet(is_dead=True, hp=0, last_interaction_date=old)
+        result = apply_revive(pet)
+        # Should be set to now (within a few seconds of the call)
+        delta = datetime.now(timezone.utc) - result.last_interaction_date
+        assert delta.total_seconds() < 5
+
+    def test_revive_no_lonely_drain_on_first_cycle(self):
+        """After revival the first monitor cycle must not apply lonely-drain."""
+        from app.domain.pet import apply_revive, apply_monitor_cycle
+        from datetime import datetime, timezone, timedelta
+        old = datetime.now(timezone.utc) - timedelta(hours=48)
+        pet = _pet(is_dead=True, hp=0, last_interaction_date=old)
+        revived = apply_revive(pet)
+        # One cycle with all servers up — HP should not drop due to loneliness
+        result = apply_monitor_cycle(revived, [], [])
+        assert result.hp >= revived.hp
+
 
 # ---------------------------------------------------------------------------
 # Scaled server damage

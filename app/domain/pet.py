@@ -187,17 +187,20 @@ def apply_revive(pet: Pet) -> Pet:
 
     Keeps level as-is so progression isn't fully wiped, but EXP resets to 0
     as a meaningful penalty. HP is restored to HP_REVIVE (not full) so the
-    player still needs to care for the pet after revival. Dust is cleared so
-    the pet doesn't immediately resume taking dust-drain damage after revival.
+    player still needs to care for the pet after revival. Dust is cleared and
+    last_interaction_date is reset to now so the pet isn't immediately penalised
+    by lonely-drain or dust-drain on the very first cycle after revival.
     """
+    now = _now()
     return replace(
         pet,
         hp=C.HP_REVIVE,
         exp=0,
         is_dead=False,
         dust_count=0,
+        last_interaction_date=now,
         last_event="revival",
-        last_updated=_now(),
+        last_updated=now,
     )
 
 
