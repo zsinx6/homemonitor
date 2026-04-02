@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.infrastructure.config import get_config, load_config
 from app.infrastructure.database import apply_initial_name_async, init_db
-from app.worker import monitor_loop
+from app.worker import fast_recovery_loop, monitor_loop
 
 logger = logging.getLogger(__name__)
 
@@ -32,13 +32,20 @@ def create_app(db_path: str = DB_PATH) -> FastAPI:
             await apply_initial_name_async(db, get_config().personality.initial_name)
 
         task = asyncio.create_task(monitor_loop(db_path))
+        recovery_task = asyncio.create_task(fast_recovery_loop(db_path))
         app.state.monitor_task = task
+        app.state.recovery_task = recovery_task
         logger.info("DigiMon(itor) started.")
         yield
-        # Shutdown: cancel worker gracefully
+        # Shutdown: cancel workers gracefully
         task.cancel()
+        recovery_task.cancel()
         try:
             await task
+        except asyncio.CancelledError:
+            pass
+        try:
+            await recovery_task
         except asyncio.CancelledError:
             pass
         logger.info("DigiMon(itor) stopped.")

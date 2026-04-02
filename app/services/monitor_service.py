@@ -7,6 +7,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from app.domain import constants as C
 from app.domain.memory import MemoryType
 from app.domain.pet import apply_monitor_cycle, parse_last_event
 from app.domain.server import ServerCheckResult, detect_state_transitions
@@ -223,6 +224,71 @@ class MonitorService:
                     message="Your homelab pet's HP hit zero. Open DigiMon(itor) to revive it!",
                     priority="high",
                     tags=["skull", "rotating_light"],
+                )
+
+    async def check_down_servers(self, db) -> None:
+        """Check only currently-DOWN servers and handle any recoveries.
+
+        Called by the fast recovery loop every 0.5 s. Only persists DB changes
+        and applies HP recovery for servers that come back UP. Servers that stay
+        DOWN are intentionally NOT written to the DB here — all statistics
+        (total_checks, uptime_percent, daily stats) and pet mechanics (EXP gain,
+        loneliness drain, V3 mechanics) remain the sole responsibility of the
+        full run_cycle to avoid inflating counters at 0.5 s intervals.
+        """
+        servers = await self._server_repo.list_servers(db)
+        down_servers = [s for s in servers if s.status == "DOWN" and not s.maintenance_mode]
+        if not down_servers:
+            return
+
+        tasks = [
+            self._check_server(s.id, s.name, s.address, s.port, s.type, s.check_params)
+            for s in down_servers
+        ]
+        results: list[ServerCheckResult] = await asyncio.gather(*tasks)
+
+        checked_at = datetime.now(timezone.utc)
+        id_to_name = {s.id: s.name for s in down_servers}
+        newly_recovered_names: list[str] = []
+
+        for result in results:
+            if result.is_up:
+                # Only persist the status change for recovered servers.
+                # Servers still DOWN are skipped — the main cycle tracks their stats.
+                await self._server_repo.update_server_check_result(
+                    db, result.server_id, True, None, checked_at,
+                    latency_ms=result.latency_ms,
+                )
+                newly_recovered_names.append(id_to_name.get(result.server_id, result.name))
+
+        if not newly_recovered_names:
+            return
+
+        pet = await self._pet_repo.get_pet(db)
+        if not pet.is_dead:
+            # Apply only the HP recovery — avoid apply_monitor_cycle which would
+            # award EXP_PER_HEALTHY_CYCLE (incorrect when other servers are still
+            # DOWN) and apply loneliness/backup drains at 0.5 s intervals.
+            recovery_hp = len(newly_recovered_names) * C.HP_GAIN_ON_RECOVERY
+            new_hp = min(pet.hp + recovery_hp, C.HP_MAX)
+            updated_pet = replace(
+                pet,
+                hp=new_hp,
+                last_event=f"recovery:{newly_recovered_names[0]}",
+            )
+            await self._pet_repo.save_pet(db, updated_pet)
+
+        if self._memory_repo:
+            for name in newly_recovered_names:
+                await self._record(db, MemoryType.SERVER_RECOVERY, name)
+
+        if self._notifier and self._notify_on_recovery:
+            for name in newly_recovered_names:
+                await self._notifier.notify(
+                    title="🟢 Server recovered",
+                    message=f"{name} is back online.",
+                    priority="default",
+                    tags=["white_check_mark"],
                 )
 
     async def check_single(self, db, server_id: int) -> None:

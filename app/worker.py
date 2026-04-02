@@ -108,3 +108,23 @@ async def monitor_loop(db_path: str) -> None:
     while True:
         await asyncio.sleep(C.MONITOR_INTERVAL_SECONDS)
         await _run_one_cycle(db_path)
+
+
+async def fast_recovery_loop(db_path: str) -> None:
+    """Poll DOWN servers every 0.5 s so recoveries are detected immediately.
+
+    Skips a tick when the main cycle is already holding the lock (the full
+    cycle checks all servers anyway, so no data is lost).
+    """
+    while True:
+        await asyncio.sleep(C.DOWN_SERVER_RECHECK_INTERVAL_SECONDS)
+        if _lock.locked():
+            continue
+        async with _lock:
+            try:
+                async with aiosqlite.connect(db_path) as db:
+                    await _get_service().check_down_servers(db)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Fast recovery check failed")

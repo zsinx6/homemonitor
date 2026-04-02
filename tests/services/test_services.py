@@ -1039,6 +1039,245 @@ class TestCheckSingleEdgeCases:
         assert pet_repo.pet.hp == hp_before
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# check_down_servers: fast recovery poller
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestCheckDownServers:
+    """Tests for MonitorService.check_down_servers() — the 0.5 s recovery poller."""
+
+    def _make_service(
+        self,
+        servers,
+        check_results,
+        initial_pet=None,
+        memory_repo=None,
+        notifier=None,
+        notify_on_recovery=False,
+    ):
+        pet_repo = MockPetRepo(pet=initial_pet or _default_pet())
+        server_repo = MockServerRepo(servers=servers)
+        result_map = {r.server_id: r for r in check_results}
+
+        async def mock_check(server_id, name, address, port, check_params=None):
+            return result_map.get(server_id, ServerCheckResult(server_id, name, True, None))
+
+        from unittest.mock import MagicMock
+        http_checker = MagicMock()
+        http_checker.check = mock_check
+
+        svc = MonitorService(
+            pet_repo=pet_repo,
+            server_repo=server_repo,
+            http_checker=http_checker,
+            memory_repo=memory_repo,
+            notifier=notifier,
+            notify_on_recovery=notify_on_recovery,
+        )
+        return svc, pet_repo, server_repo
+
+    async def test_no_down_servers_is_noop(self):
+        """When all servers are UP, check_down_servers does not call the checker."""
+        server = FakeServer(id=1, name="nginx", address="http://x", port=None,
+                            type="http", status="UP")
+        svc, pet_repo, server_repo = self._make_service([server], [])
+        hp_before = pet_repo.pet.hp
+        await svc.check_down_servers(db=None)
+        assert server_repo.check_updates == []
+        assert pet_repo.pet.hp == hp_before
+
+    async def test_down_server_stays_down_updates_db_but_not_pet(self):
+        """A DOWN server that remains DOWN: DB is NOT updated (avoids stat inflation), pet unchanged."""
+        server = FakeServer(id=1, name="db", address="http://x", port=None,
+                            type="http", status="DOWN")
+        result = ServerCheckResult(server_id=1, name="db", is_up=False, error="timeout")
+        svc, pet_repo, server_repo = self._make_service([server], [result])
+        hp_before = pet_repo.pet.hp
+        await svc.check_down_servers(db=None)
+        assert server_repo.check_updates == []  # still-DOWN servers are not written
+        assert pet_repo.pet.hp == hp_before
+
+    async def test_down_server_recovered_updates_db_and_restores_hp(self):
+        """A DOWN server that comes back UP: DB updated and pet gains HP."""
+        pet = _default_pet(hp=5)
+        server = FakeServer(id=1, name="api", address="http://x", port=None,
+                            type="http", status="DOWN")
+        result = ServerCheckResult(server_id=1, name="api", is_up=True, error=None)
+        svc, pet_repo, server_repo = self._make_service([server], [result], initial_pet=pet)
+        await svc.check_down_servers(db=None)
+        assert len(server_repo.check_updates) == 1
+        _, is_up, _ = server_repo.check_updates[0]
+        assert is_up is True
+        assert pet_repo.pet.hp >= 5 + C.HP_GAIN_ON_RECOVERY
+
+    async def test_maintenance_down_server_is_excluded(self):
+        """Maintenance-mode DOWN servers are skipped entirely."""
+        server = FakeServer(id=1, name="maint", address="http://x", port=None,
+                            type="http", status="DOWN", maintenance_mode=True)
+        svc, pet_repo, server_repo = self._make_service([server], [])
+        hp_before = pet_repo.pet.hp
+        await svc.check_down_servers(db=None)
+        assert server_repo.check_updates == []
+        assert pet_repo.pet.hp == hp_before
+
+    async def test_only_down_servers_are_checked(self):
+        """UP servers are never passed to the checker; only DOWN ones are.
+        Only recovered servers (DOWN→UP) get a DB write."""
+        up_server = FakeServer(id=1, name="up", address="http://x", port=None,
+                               type="http", status="UP")
+        down_server = FakeServer(id=2, name="down", address="http://y", port=None,
+                                 type="http", status="DOWN")
+        result = ServerCheckResult(server_id=2, name="down", is_up=False, error="timeout")
+        svc, _, server_repo = self._make_service([up_server, down_server], [result])
+        await svc.check_down_servers(db=None)
+        # DOWN server that stays DOWN → no DB write (avoids stat inflation)
+        assert server_repo.check_updates == []
+
+    async def test_recovery_records_memory(self):
+        """Recovery via check_down_servers records a SERVER_RECOVERY memory."""
+        mem = MockMemoryRepo()
+        server = FakeServer(id=1, name="nginx", address="http://x", port=None,
+                            type="http", status="DOWN")
+        result = ServerCheckResult(server_id=1, name="nginx", is_up=True, error=None)
+        svc, _, _ = self._make_service([server], [result], memory_repo=mem)
+        await svc.check_down_servers(db=None)
+        types = [c["event_type"] for c in mem.calls]
+        assert "server_recovery" in types
+
+    async def test_no_memory_recorded_when_still_down(self):
+        """No memory event when a DOWN server stays DOWN."""
+        mem = MockMemoryRepo()
+        server = FakeServer(id=1, name="db", address="http://x", port=None,
+                            type="http", status="DOWN")
+        result = ServerCheckResult(server_id=1, name="db", is_up=False, error="timeout")
+        svc, _, _ = self._make_service([server], [result], memory_repo=mem)
+        await svc.check_down_servers(db=None)
+        assert mem.calls == []
+
+    async def test_recovery_notification_sent_when_enabled(self):
+        """Recovery notification is sent when notify_on_recovery=True."""
+        from unittest.mock import AsyncMock as _AsyncMock
+        notifier = _AsyncMock()
+        notifier.notify = _AsyncMock()
+        server = FakeServer(id=1, name="nginx", address="http://x", port=None,
+                            type="http", status="DOWN")
+        result = ServerCheckResult(server_id=1, name="nginx", is_up=True, error=None)
+        svc, _, _ = self._make_service([server], [result],
+                                       notifier=notifier, notify_on_recovery=True)
+        await svc.check_down_servers(db=None)
+        notifier.notify.assert_called_once()
+
+    async def test_recovery_notification_suppressed_when_disabled(self):
+        """Recovery notification is NOT sent when notify_on_recovery=False."""
+        from unittest.mock import AsyncMock as _AsyncMock
+        notifier = _AsyncMock()
+        notifier.notify = _AsyncMock()
+        server = FakeServer(id=1, name="nginx", address="http://x", port=None,
+                            type="http", status="DOWN")
+        result = ServerCheckResult(server_id=1, name="nginx", is_up=True, error=None)
+        svc, _, _ = self._make_service([server], [result],
+                                       notifier=notifier, notify_on_recovery=False)
+        await svc.check_down_servers(db=None)
+        notifier.notify.assert_not_called()
+
+    async def test_multiple_recoveries_in_one_tick(self):
+        """Multiple DOWN servers recovering simultaneously all gain HP and memory."""
+        mem = MockMemoryRepo()
+        pet = _default_pet(hp=3)
+        servers = [
+            FakeServer(id=1, name="api",   address="http://a", port=None, type="http", status="DOWN"),
+            FakeServer(id=2, name="cache", address="http://b", port=None, type="http", status="DOWN"),
+        ]
+        results = [
+            ServerCheckResult(server_id=1, name="api",   is_up=True, error=None),
+            ServerCheckResult(server_id=2, name="cache", is_up=True, error=None),
+        ]
+        svc, pet_repo, _ = self._make_service(servers, results,
+                                              initial_pet=pet, memory_repo=mem)
+        await svc.check_down_servers(db=None)
+        recovery_events = [c for c in mem.calls if c["event_type"] == "server_recovery"]
+        assert len(recovery_events) == 2
+        assert pet_repo.pet.hp >= 3 + 2 * C.HP_GAIN_ON_RECOVERY
+
+    async def test_exp_not_awarded_when_other_servers_still_down(self):
+        """Recovery of one server must not award EXP_PER_HEALTHY_CYCLE when others remain DOWN."""
+        pet = _default_pet(hp=5, exp=0)
+        servers = [
+            FakeServer(id=1, name="api",   address="http://a", port=None, type="http", status="DOWN"),
+            FakeServer(id=2, name="cache", address="http://b", port=None, type="http", status="DOWN"),
+        ]
+        results = [
+            ServerCheckResult(server_id=1, name="api",   is_up=True,  error=None),   # recovered
+            ServerCheckResult(server_id=2, name="cache", is_up=False, error="down"),  # still down
+        ]
+        svc, pet_repo, _ = self._make_service(servers, results, initial_pet=pet)
+        await svc.check_down_servers(db=None)
+        # HP gain for the recovered server is correct
+        assert pet_repo.pet.hp >= 5 + C.HP_GAIN_ON_RECOVERY
+        # But EXP must NOT be awarded — cache is still down
+        assert pet_repo.pet.exp == 0
+
+    async def test_dead_pet_hp_not_changed_on_recovery(self):
+        """A dead pet's HP must not be modified even when a server recovers."""
+        from dataclasses import replace as _replace
+        dead_pet = _replace(_default_pet(hp=0), is_dead=True)
+        server = FakeServer(id=1, name="api", address="http://x", port=None,
+                            type="http", status="DOWN")
+        result = ServerCheckResult(server_id=1, name="api", is_up=True, error=None)
+        svc, pet_repo, _ = self._make_service([server], [result], initial_pet=dead_pet)
+        await svc.check_down_servers(db=None)
+        # Pet must stay dead and untouched
+        assert pet_repo.pet.hp == 0
+        assert pet_repo.pet.is_dead is True
+        assert len(pet_repo.saved) == 0  # save_pet must not have been called
+
+    async def test_dead_pet_memory_and_notification_still_fire(self):
+        """Memory and notification still happen even when the pet is dead."""
+        from dataclasses import replace as _replace
+        from unittest.mock import AsyncMock as _AsyncMock
+        mem = MockMemoryRepo()
+        notifier = _AsyncMock()
+        notifier.notify = _AsyncMock()
+        dead_pet = _replace(_default_pet(hp=0), is_dead=True)
+        server = FakeServer(id=1, name="api", address="http://x", port=None,
+                            type="http", status="DOWN")
+        result = ServerCheckResult(server_id=1, name="api", is_up=True, error=None)
+        svc, _, _ = self._make_service([server], [result], initial_pet=dead_pet,
+                                       memory_repo=mem, notifier=notifier,
+                                       notify_on_recovery=True)
+        await svc.check_down_servers(db=None)
+        assert any(c["event_type"] == "server_recovery" for c in mem.calls)
+        notifier.notify.assert_called_once()
+
+    async def test_recovery_hp_clamped_at_hp_max(self):
+        """HP gain from recovery is clamped and never exceeds HP_MAX."""
+        pet = _default_pet(hp=C.HP_MAX)  # already full
+        server = FakeServer(id=1, name="api", address="http://x", port=None,
+                            type="http", status="DOWN")
+        result = ServerCheckResult(server_id=1, name="api", is_up=True, error=None)
+        svc, pet_repo, _ = self._make_service([server], [result], initial_pet=pet)
+        await svc.check_down_servers(db=None)
+        assert pet_repo.pet.hp == C.HP_MAX  # no overflow
+
+    async def test_no_double_recovery_when_run_cycle_follows_fast_loop(self):
+        """After fast loop marks a server UP, run_cycle must NOT apply recovery HP again.
+
+        Simulates the state after check_down_servers has already written status=UP
+        to DB: the server list shows UP, and the check also returns UP → no
+        DOWN→UP transition → no extra HP recovery from run_cycle.
+        """
+        pet = _default_pet(hp=5)
+        # Server already shows UP in DB (check_down_servers already ran)
+        server = FakeServer(id=1, name="api", address="http://x", port=None,
+                            type="http", status="UP")
+        result = ServerCheckResult(server_id=1, name="api", is_up=True, error=None)
+        service, pet_repo, _ = self._make_service([server], [result], initial_pet=pet)
+        await service.run_cycle(db=None)
+        # Healthy cycle: EXP awarded but no HP_GAIN_ON_RECOVERY
+        assert pet_repo.pet.exp == C.EXP_PER_HEALTHY_CYCLE
+        assert pet_repo.pet.hp == 5  # HP unchanged, no recovery applied
+
+
 # ─── Daily stats ON CONFLICT SQL math ───────────────────────────────────────
 
 class TestDailyStatUpsert:
