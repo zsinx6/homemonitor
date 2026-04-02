@@ -22,6 +22,7 @@ class ServerRepoAdapter:
     async def update_server_check_result(self, db, *a, **kw): await server_repo.update_server_check_result(db, *a, **kw)
     async def upsert_daily_stat(self, db, *a, **kw): await server_repo.upsert_daily_stat(db, *a, **kw)
     async def update_server_check_params(self, db, sid, params): await server_repo.update_server_check_params(db, sid, params)
+    async def update_ssl_warning_date(self, db, sid, warned_at): await server_repo.update_server_ssl_warning_date(db, sid, warned_at)
 
 
 class TaskRepoAdapter:

@@ -48,8 +48,6 @@ class MonitorService:
             self._checker_registry.setdefault("http", http_checker)
         if ping_checker is not None:
             self._checker_registry.setdefault("ping", ping_checker)
-        # Per-server SSL warning throttle (server_id → last warned datetime)
-        self._ssl_warned_at: dict[int, datetime] = {}
 
     async def _record(self, db, event_type: str, detail=None) -> None:
         if self._memory_repo:
@@ -149,9 +147,12 @@ class MonitorService:
             from app.domain import constants as C
             updated_pet = apply_dust_spawn(updated_pet)
             updated_pet = apply_mood_rotation(updated_pet)
-            # Use epoch-seconds modulo as a restart-safe cycle throttle
-            epoch_bucket = int(datetime.now(timezone.utc).timestamp()) // C.MONITOR_INTERVAL_SECONDS
-            if epoch_bucket % C.DUST_HP_DRAIN_CYCLE_MODULO == 0:
+            # Throttle dust HP drain by elapsed time since last drain, not epoch modulo.
+            # Epoch modulo was unreliable: a server restart mid-bucket could apply the
+            # drain twice, and a restart at a bucket boundary could skip a drain.
+            drain_interval = timedelta(seconds=C.MONITOR_INTERVAL_SECONDS * C.DUST_HP_DRAIN_CYCLE_MODULO)
+            last_drain = updated_pet.last_dust_drain_at
+            if last_drain is None or (datetime.now(timezone.utc) - last_drain) >= drain_interval:
                 updated_pet = apply_dust_hp_drain(updated_pet)
 
             # Check death from dust drain
@@ -172,7 +173,7 @@ class MonitorService:
             if event_type:
                 await self._record(db, event_type, detail)
 
-        # SSL expiry warnings (throttled to once per 24 h per server)
+        # SSL expiry warnings (throttled to once per 24 h per server, persisted in DB)
         now = datetime.now(timezone.utc)
         for result in results:
             if result.ssl_expiry_date is None:
@@ -181,13 +182,17 @@ class MonitorService:
                 expiry = datetime.fromisoformat(result.ssl_expiry_date)
                 days_left = (expiry - now).days
             except Exception:
+                logger.warning("Could not parse ssl_expiry_date %r for server %d",
+                               result.ssl_expiry_date, result.server_id)
                 continue
             if days_left > _SSL_WARN_DAYS:
                 continue
-            last_warned = self._ssl_warned_at.get(result.server_id)
+            # Use DB-persisted last_ssl_warning_date so throttle survives restarts
+            server = next((s for s in servers if s.id == result.server_id), None)
+            last_warned = server.last_ssl_warning_date if server else None
             if last_warned and (now - last_warned) < _SSL_WARN_INTERVAL:
                 continue
-            self._ssl_warned_at[result.server_id] = now
+            await self._server_repo.update_ssl_warning_date(db, result.server_id, now)
             server_name = id_to_name.get(result.server_id, f"server {result.server_id}")
             await self._record(
                 db, MemoryType.SSL_EXPIRY_WARNING,
@@ -333,18 +338,20 @@ class MonitorService:
                     )
             params["last_ip"] = result.detected_ip
             await self._server_repo.update_server_check_params(db, result.server_id, params)
-        # SSL expiry warnings (throttled, same logic as run_cycle)
+        # SSL expiry warnings (throttled, same logic as run_cycle; uses DB-persisted date)
         if result.ssl_expiry_date is not None:
             now = datetime.now(timezone.utc)
             try:
                 expiry = datetime.fromisoformat(result.ssl_expiry_date)
                 days_left = (expiry - now).days
             except Exception:
+                logger.warning("Could not parse ssl_expiry_date %r for server %d",
+                               result.ssl_expiry_date, result.server_id)
                 days_left = 999
             if days_left <= _SSL_WARN_DAYS:
-                last_warned = self._ssl_warned_at.get(result.server_id)
+                last_warned = server.last_ssl_warning_date
                 if not last_warned or (now - last_warned) >= _SSL_WARN_INTERVAL:
-                    self._ssl_warned_at[result.server_id] = now
+                    await self._server_repo.update_ssl_warning_date(db, result.server_id, now)
                     await self._record(
                         db, MemoryType.SSL_EXPIRY_WARNING,
                         f"{server.name}: {days_left}d remaining",

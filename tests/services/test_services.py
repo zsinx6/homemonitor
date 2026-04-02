@@ -78,6 +78,12 @@ class MockServerRepo:
     async def update_server_check_params(self, db, server_id, params):
         pass
 
+    async def update_ssl_warning_date(self, db, server_id, warned_at):
+        for s in self.servers:
+            if s.id == server_id:
+                s.last_ssl_warning_date = warned_at
+                break
+
 
 @dataclass
 class MockTaskRepo:
@@ -104,6 +110,7 @@ class FakeServer:
     status: str = "UP"
     maintenance_mode: bool = False
     check_params: Optional[dict] = None
+    last_ssl_warning_date: Optional[datetime] = None
 
 
 @dataclass
@@ -1340,3 +1347,322 @@ class TestDailyStatUpsert:
             assert await get_daily_stats(db, srv.id, limit=7) == []
         finally:
             await conn.__aexit__(None, None, None)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SSL warning throttle — persistence tests
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestSSLWarningThrottle:
+    """SSL expiry warnings must be throttled per-server via DB (survives restarts)."""
+
+    def _make_service(self, servers, check_results, memory_repo=None):
+        pet_repo = MockPetRepo(pet=_default_pet())
+        server_repo = MockServerRepo(servers=servers)
+        result_map = {r.server_id: r for r in check_results}
+
+        from unittest.mock import MagicMock
+        checker = MagicMock()
+
+        async def mock_check(server_id, name, address, port, check_params=None):
+            return result_map.get(server_id, ServerCheckResult(server_id, name, True, None))
+
+        checker.check = mock_check
+        svc = MonitorService(
+            pet_repo=pet_repo,
+            server_repo=server_repo,
+            http_checker=checker,
+            memory_repo=memory_repo,
+        )
+        return svc, server_repo
+
+    async def test_ssl_warning_fires_when_cert_near_expiry(self):
+        """run_cycle fires SSL warning when cert expires within 30 days."""
+        mem = MockMemoryRepo()
+        soon = (_now() + timedelta(days=20)).isoformat()
+        server = FakeServer(id=1, name="web", address="https://web", port=443,
+                            type="http", status="UP")
+        result = ServerCheckResult(server_id=1, name="web", is_up=True, error=None,
+                                   ssl_expiry_date=soon)
+        svc, srv_repo = self._make_service([server], [result], memory_repo=mem)
+        await svc.run_cycle(db=None)
+        types = [c["event_type"] for c in mem.calls]
+        assert "ssl_expiry_warning" in types
+
+    async def test_ssl_warning_not_repeated_within_24h(self):
+        """When last_ssl_warning_date is recent, warning is suppressed."""
+        mem = MockMemoryRepo()
+        soon = (_now() + timedelta(days=20)).isoformat()
+        # Server was warned just 1 hour ago
+        recent_warned = _now() - timedelta(hours=1)
+        server = FakeServer(id=1, name="web", address="https://web", port=443,
+                            type="http", status="UP",
+                            last_ssl_warning_date=recent_warned)
+        result = ServerCheckResult(server_id=1, name="web", is_up=True, error=None,
+                                   ssl_expiry_date=soon)
+        svc, _ = self._make_service([server], [result], memory_repo=mem)
+        await svc.run_cycle(db=None)
+        types = [c["event_type"] for c in mem.calls]
+        assert "ssl_expiry_warning" not in types
+
+    async def test_ssl_warning_fires_after_24h_cooldown(self):
+        """When last_ssl_warning_date is >24h ago, warning fires again."""
+        mem = MockMemoryRepo()
+        soon = (_now() + timedelta(days=20)).isoformat()
+        old_warned = _now() - timedelta(hours=25)
+        server = FakeServer(id=1, name="web", address="https://web", port=443,
+                            type="http", status="UP",
+                            last_ssl_warning_date=old_warned)
+        result = ServerCheckResult(server_id=1, name="web", is_up=True, error=None,
+                                   ssl_expiry_date=soon)
+        svc, _ = self._make_service([server], [result], memory_repo=mem)
+        await svc.run_cycle(db=None)
+        types = [c["event_type"] for c in mem.calls]
+        assert "ssl_expiry_warning" in types
+
+    async def test_ssl_warning_persists_date_to_db(self):
+        """After firing a warning, last_ssl_warning_date is written to the server repo."""
+        mem = MockMemoryRepo()
+        soon = (_now() + timedelta(days=20)).isoformat()
+        server = FakeServer(id=1, name="web", address="https://web", port=443,
+                            type="http", status="UP")
+        result = ServerCheckResult(server_id=1, name="web", is_up=True, error=None,
+                                   ssl_expiry_date=soon)
+        svc, srv_repo = self._make_service([server], [result], memory_repo=mem)
+        await svc.run_cycle(db=None)
+        # The server's last_ssl_warning_date should be updated in the repo
+        assert server.last_ssl_warning_date is not None
+
+    async def test_ssl_warning_not_fired_for_cert_far_away(self):
+        """No warning when cert expires in >30 days."""
+        mem = MockMemoryRepo()
+        far = (_now() + timedelta(days=60)).isoformat()
+        server = FakeServer(id=1, name="web", address="https://web", port=443,
+                            type="http", status="UP")
+        result = ServerCheckResult(server_id=1, name="web", is_up=True, error=None,
+                                   ssl_expiry_date=far)
+        svc, _ = self._make_service([server], [result], memory_repo=mem)
+        await svc.run_cycle(db=None)
+        types = [c["event_type"] for c in mem.calls]
+        assert "ssl_expiry_warning" not in types
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Dust drain double-apply guard tests
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestDustDrainThrottle:
+    """Dust HP drain must only fire once per DUST_HP_DRAIN_CYCLE_MODULO intervals."""
+
+    def _make_service(self, servers, check_results, initial_pet=None):
+        pet_repo = MockPetRepo(pet=initial_pet or _default_pet())
+        server_repo = MockServerRepo(servers=servers)
+        result_map = {r.server_id: r for r in check_results}
+
+        from unittest.mock import MagicMock
+        checker = MagicMock()
+
+        async def mock_check(server_id, name, address, port, check_params=None):
+            return result_map.get(server_id, ServerCheckResult(server_id, name, True, None))
+
+        checker.check = mock_check
+        svc = MonitorService(
+            pet_repo=pet_repo,
+            server_repo=server_repo,
+            http_checker=checker,
+        )
+        return svc, pet_repo
+
+    async def test_dust_drain_not_applied_within_interval(self):
+        """When last_dust_drain_at is recent, drain is skipped."""
+        # Pet at max dust with a very recent drain
+        recent_drain = _now() - timedelta(seconds=30)
+        pet = replace(_default_pet(hp=C.HP_MAX),
+                      dust_count=C.MAX_DUST,
+                      last_dust_drain_at=recent_drain)
+        server = FakeServer(id=1, name="web", address="http://web", port=80, type="http")
+        result = ServerCheckResult(server_id=1, name="web", is_up=True, error=None)
+        svc, pet_repo = self._make_service([server], [result], initial_pet=pet)
+        hp_before = pet_repo.pet.hp
+        await svc.run_cycle(db=None)
+        assert pet_repo.pet.hp == hp_before  # no drain applied
+
+    async def test_dust_drain_applied_when_overdue(self):
+        """Dust drain fires when last_dust_drain_at is beyond the interval."""
+        drain_interval = C.MONITOR_INTERVAL_SECONDS * C.DUST_HP_DRAIN_CYCLE_MODULO
+        old_drain = _now() - timedelta(seconds=drain_interval + 60)
+        pet = replace(_default_pet(hp=C.HP_MAX),
+                      dust_count=C.MAX_DUST,
+                      last_dust_drain_at=old_drain)
+        server = FakeServer(id=1, name="web", address="http://web", port=80, type="http")
+        result = ServerCheckResult(server_id=1, name="web", is_up=True, error=None)
+        svc, pet_repo = self._make_service([server], [result], initial_pet=pet)
+        hp_before = pet_repo.pet.hp
+        await svc.run_cycle(db=None)
+        assert pet_repo.pet.hp < hp_before  # drain was applied
+
+    async def test_dust_drain_applied_when_never_drained(self):
+        """Dust drain fires on first cycle when last_dust_drain_at is None."""
+        pet = replace(_default_pet(hp=C.HP_MAX),
+                      dust_count=C.MAX_DUST,
+                      last_dust_drain_at=None)
+        server = FakeServer(id=1, name="web", address="http://web", port=80, type="http")
+        result = ServerCheckResult(server_id=1, name="web", is_up=True, error=None)
+        svc, pet_repo = self._make_service([server], [result], initial_pet=pet)
+        hp_before = pet_repo.pet.hp
+        await svc.run_cycle(db=None)
+        assert pet_repo.pet.hp < hp_before
+
+    async def test_dust_drain_updates_last_dust_drain_at(self):
+        """After drain fires, last_dust_drain_at on saved pet is updated."""
+        drain_interval = C.MONITOR_INTERVAL_SECONDS * C.DUST_HP_DRAIN_CYCLE_MODULO
+        old_drain = _now() - timedelta(seconds=drain_interval + 60)
+        pet = replace(_default_pet(hp=C.HP_MAX),
+                      dust_count=C.MAX_DUST,
+                      last_dust_drain_at=old_drain)
+        server = FakeServer(id=1, name="web", address="http://web", port=80, type="http")
+        result = ServerCheckResult(server_id=1, name="web", is_up=True, error=None)
+        svc, pet_repo = self._make_service([server], [result], initial_pet=pet)
+        await svc.run_cycle(db=None)
+        assert pet_repo.pet.last_dust_drain_at is not None
+        assert pet_repo.pet.last_dust_drain_at > old_drain
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Import deduplication NULL-safety tests
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestImportDedup:
+    """POST /import must deduplicate memories correctly even when detail is NULL."""
+
+    async def _fresh_db(self):
+        import aiosqlite
+        from app.infrastructure.database import init_db
+        conn = aiosqlite.connect(":memory:")
+        db = await conn.__aenter__()
+        db.row_factory = aiosqlite.Row
+        await init_db(db)
+        return conn, db
+
+    async def test_null_detail_not_duplicated(self):
+        """Importing same event twice with NULL detail inserts only one row."""
+        from app.infrastructure.repositories.memory_repo import add_memory, list_memories
+        conn, db = await self._fresh_db()
+        try:
+            # Simulate what the import route does (after the NULL fix)
+            occurred = "2025-01-01T00:00:00+00:00"
+            await db.execute(
+                """INSERT OR IGNORE INTO pet_memories (event_type, detail, occurred_at)
+                   SELECT ?, ?, ?
+                   WHERE NOT EXISTS (
+                       SELECT 1 FROM pet_memories
+                       WHERE occurred_at = ? AND event_type = ?
+                         AND (detail IS ? OR detail = ?)
+                   )""",
+                ("server_down", None, occurred, occurred, "server_down", None, None),
+            )
+            await db.execute(
+                """INSERT OR IGNORE INTO pet_memories (event_type, detail, occurred_at)
+                   SELECT ?, ?, ?
+                   WHERE NOT EXISTS (
+                       SELECT 1 FROM pet_memories
+                       WHERE occurred_at = ? AND event_type = ?
+                         AND (detail IS ? OR detail = ?)
+                   )""",
+                ("server_down", None, occurred, occurred, "server_down", None, None),
+            )
+            await db.commit()
+            mems = await list_memories(db, limit=10)
+            null_downs = [m for m in mems if m.event_type == "server_down"]
+            assert len(null_downs) == 1
+        finally:
+            await conn.__aexit__(None, None, None)
+
+    async def test_empty_and_null_detail_stay_distinct(self):
+        """NULL detail and empty-string detail are treated as distinct entries."""
+        conn, db = await self._fresh_db()
+        try:
+            occurred = "2025-01-02T00:00:00+00:00"
+            for detail in (None, ""):
+                await db.execute(
+                    """INSERT OR IGNORE INTO pet_memories (event_type, detail, occurred_at)
+                       SELECT ?, ?, ?
+                       WHERE NOT EXISTS (
+                           SELECT 1 FROM pet_memories
+                           WHERE occurred_at = ? AND event_type = ?
+                             AND (detail IS ? OR detail = ?)
+                       )""",
+                    ("server_down", detail, occurred, occurred, "server_down", detail, detail),
+                )
+            await db.commit()
+            async with db.execute(
+                "SELECT COUNT(*) FROM pet_memories WHERE occurred_at = ? AND event_type = ?",
+                (occurred, "server_down"),
+            ) as cur:
+                count = (await cur.fetchone())[0]
+            assert count == 2
+        finally:
+            await conn.__aexit__(None, None, None)
+
+    async def test_non_null_detail_deduplication(self):
+        """Importing same event+detail twice inserts only one row."""
+        conn, db = await self._fresh_db()
+        try:
+            occurred = "2025-01-03T00:00:00+00:00"
+            for _ in range(2):
+                await db.execute(
+                    """INSERT OR IGNORE INTO pet_memories (event_type, detail, occurred_at)
+                       SELECT ?, ?, ?
+                       WHERE NOT EXISTS (
+                           SELECT 1 FROM pet_memories
+                           WHERE occurred_at = ? AND event_type = ?
+                             AND (detail IS ? OR detail = ?)
+                       )""",
+                    ("server_down", "nginx", occurred, occurred, "server_down", "nginx", "nginx"),
+                )
+            await db.commit()
+            async with db.execute(
+                "SELECT COUNT(*) FROM pet_memories WHERE occurred_at = ? AND event_type = ?",
+                (occurred, "server_down"),
+            ) as cur:
+                count = (await cur.fetchone())[0]
+            assert count == 1
+        finally:
+            await conn.__aexit__(None, None, None)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Race condition lock tests
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestPetServiceRaceLock:
+    """Concurrent requests must not bypass cooldown checks via the module-level lock."""
+
+    async def test_concurrent_interact_only_one_succeeds(self):
+        """Two concurrent interact() calls: only one bypasses the cooldown."""
+        import asyncio
+        # Pet with no prior interaction so first call succeeds
+        pet = replace(_default_pet(), last_interaction_date=None)
+        svc = PetService(pet_repo=MockPetRepo(pet=pet))
+        results = await asyncio.gather(
+            svc.interact(db=None),
+            svc.interact(db=None),
+        )
+        non_cooldown = [r for r in results if not r[1]]  # r[1] is on_cooldown
+        assert len(non_cooldown) == 1, (
+            "Exactly one interact() should succeed; the other must hit cooldown"
+        )
+
+    async def test_concurrent_backup_only_one_succeeds(self):
+        """Two concurrent backup() calls: only the first one succeeds."""
+        import asyncio
+        pet = replace(_default_pet(), last_backup_date=None)
+        svc = PetService(pet_repo=MockPetRepo(pet=pet))
+        results = await asyncio.gather(
+            svc.backup(db=None),
+            svc.backup(db=None),
+        )
+        non_cooldown = [r for r in results if not r[1]]  # r[1] is on_cooldown
+        assert len(non_cooldown) == 1, (
+            "Exactly one backup() should succeed; the other must hit cooldown"
+        )

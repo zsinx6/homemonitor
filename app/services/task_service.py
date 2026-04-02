@@ -1,10 +1,15 @@
 """Task service: create and complete task use cases."""
 from __future__ import annotations
 
+import logging
 from typing import Optional
+
+from fastapi import HTTPException
 
 from app.domain.memory import MemoryType
 from app.domain.pet import apply_complete_task, parse_last_event
+
+logger = logging.getLogger(__name__)
 
 
 class TaskService:
@@ -25,7 +30,11 @@ class TaskService:
         pet = await self._pet_repo.get_pet(db)
         updated_pet = apply_complete_task(pet)
         await self._pet_repo.save_pet(db, updated_pet, commit=False)
-        await db.commit()
+        try:
+            await db.commit()
+        except Exception as exc:
+            logger.error("Failed to commit task completion for task %d: %s", task_id, exc)
+            raise HTTPException(status_code=500, detail="Failed to save task completion.") from exc
         # Record memories after successful commit
         await self._record(db, MemoryType.TASK_COMPLETE, task.task)
         event_type, detail = parse_last_event(updated_pet)

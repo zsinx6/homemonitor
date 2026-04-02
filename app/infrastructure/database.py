@@ -248,6 +248,7 @@ async def init_db(db: aiosqlite.Connection) -> None:
         ("current_mood",   "ALTER TABLE pet_state ADD COLUMN current_mood TEXT DEFAULT 'Energetic'"),
         ("last_mood_change", "ALTER TABLE pet_state ADD COLUMN last_mood_change TEXT"),
         ("last_focus_date",  "ALTER TABLE pet_state ADD COLUMN last_focus_date TEXT"),
+        ("last_dust_drain_at", "ALTER TABLE pet_state ADD COLUMN last_dust_drain_at TEXT"),
     ]
     for col_name, sql in _v3_migrations:
         try:
@@ -277,7 +278,15 @@ async def init_db(db: aiosqlite.Connection) -> None:
         logger.debug("Migration done: added avg_response_ms to server_daily_stats")
     except aiosqlite.OperationalError:
         logger.debug("Migration skip: avg_response_ms already exists in server_daily_stats")
-    # Migration: rebuild servers table to add public_ip to type CHECK constraint.
+    # Migration: add last_ssl_warning_date column to servers (nullable — safe ALTER TABLE)
+    try:
+        await db.execute(
+            "ALTER TABLE servers ADD COLUMN last_ssl_warning_date TEXT"
+        )
+        await db.commit()
+        logger.debug("Migration done: added last_ssl_warning_date to servers")
+    except aiosqlite.OperationalError:
+        logger.debug("Migration skip: last_ssl_warning_date already exists in servers")
     # Detects by absence of 'public_ip' in the current table DDL.
     try:
         async with db.execute(

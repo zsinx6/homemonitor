@@ -31,6 +31,7 @@ class Pet:
     current_mood: str = "Energetic"
     last_mood_change: Optional[datetime] = None
     last_focus_date: Optional[datetime] = None
+    last_dust_drain_at: Optional[datetime] = None
 
 
 def _now() -> datetime:
@@ -273,17 +274,18 @@ def apply_mood_rotation(pet: Pet) -> Pet:
 def apply_dust_hp_drain(pet: Pet) -> Pet:
     """Apply HP drain if at max dust. Drains C.HP_DRAIN_MAX_DUST HP.
 
-    The caller (monitor_service) is responsible for throttling this to once
-    every DUST_HP_DRAIN_CYCLE_MODULO cycles using a deterministic timestamp check.
+    Records last_dust_drain_at so the caller can throttle by elapsed time
+    rather than epoch-modulo (which is unreliable across restarts).
 
     Returns:
-        Updated Pet with reduced HP, or unchanged if dust not at max.
+        Updated Pet with reduced HP and updated last_dust_drain_at,
+        or unchanged if dust not at max.
     """
     if pet.dust_count < C.MAX_DUST:
         return pet
 
     new_hp = _clamp(pet.hp - C.HP_DRAIN_MAX_DUST, C.HP_MIN, C.HP_MAX)
-    return replace(pet, hp=new_hp)
+    return replace(pet, hp=new_hp, last_dust_drain_at=_now())
 
 
 def get_evolution(level: int) -> tuple[str, str]:

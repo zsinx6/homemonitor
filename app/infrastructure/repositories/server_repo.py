@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
@@ -9,6 +10,8 @@ from typing import Optional
 import aiosqlite
 
 from app.infrastructure.repositories.common import parse_datetime
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -29,6 +32,7 @@ class ServerRow:
     check_params: Optional[dict] = None
     last_response_ms: Optional[int] = None
     ssl_expiry_date: Optional[str] = None
+    last_ssl_warning_date: Optional[datetime] = None
 
 
 @dataclass
@@ -38,6 +42,16 @@ class DailyStatRow:
     successful_checks: int
     uptime_percent: float
     avg_response_ms: float | None = None
+
+
+def _parse_check_params(raw: str | None) -> dict | None:
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning("Ignoring malformed check_params JSON (value: %.80r)", raw)
+        return None
 
 
 def _row_to_server(row: aiosqlite.Row) -> ServerRow:
@@ -57,9 +71,10 @@ def _row_to_server(row: aiosqlite.Row) -> ServerRow:
         last_checked=parse_datetime(row["last_checked"]),
         maintenance_mode=bool(row["maintenance_mode"]),
         position=row["position"] if "position" in keys else 0,
-        check_params=json.loads(raw_params) if raw_params else None,
+        check_params=_parse_check_params(raw_params),
         last_response_ms=row["last_response_ms"] if "last_response_ms" in keys else None,
         ssl_expiry_date=row["ssl_expiry_date"] if "ssl_expiry_date" in keys else None,
+        last_ssl_warning_date=parse_datetime(row["last_ssl_warning_date"]) if "last_ssl_warning_date" in keys else None,
     )
 
 
@@ -243,6 +258,19 @@ async def update_server_check_params(
     await db.execute(
         "UPDATE servers SET check_params = ? WHERE id = ?",
         (json.dumps(check_params), server_id),
+    )
+    await db.commit()
+
+
+async def update_server_ssl_warning_date(
+    db: aiosqlite.Connection,
+    server_id: int,
+    warned_at: datetime,
+) -> None:
+    """Persist the timestamp of the last SSL expiry warning for a server."""
+    await db.execute(
+        "UPDATE servers SET last_ssl_warning_date = ? WHERE id = ?",
+        (warned_at.isoformat(), server_id),
     )
     await db.commit()
 

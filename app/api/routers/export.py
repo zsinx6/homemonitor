@@ -244,11 +244,11 @@ async def import_data(
         )
         await db.commit()
 
-    # --- Memories (dedup by occurred_at + event_type) ---
+    # --- Memories (dedup by occurred_at + event_type + detail) ---
     if body.memories:
         for m in body.memories:
             event_type = m.get("event_type") or ""
-            detail = m.get("detail") or ""
+            detail = m.get("detail")  # keep None distinct from ""
             occurred_at = m.get("occurred_at")
             if not event_type or not occurred_at:
                 continue
@@ -257,9 +257,10 @@ async def import_data(
                    SELECT ?, ?, ?
                    WHERE NOT EXISTS (
                        SELECT 1 FROM pet_memories
-                       WHERE occurred_at = ? AND event_type = ? AND COALESCE(detail,'') = COALESCE(?,'')
+                       WHERE occurred_at = ? AND event_type = ?
+                         AND (detail IS ? OR detail = ?)
                    )""",
-                (event_type, detail, occurred_at, occurred_at, event_type, detail),
+                (event_type, detail, occurred_at, occurred_at, event_type, detail, detail),
             )
             imported_memories += 1
         await db.commit()
